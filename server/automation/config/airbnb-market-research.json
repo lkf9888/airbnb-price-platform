@@ -1,0 +1,10 @@
+{
+  "browser": "chromium",
+  "searchBaseUrl": "https://www.airbnb.com/s/homes",
+  "storageStatePath": "state/auth/airbnb-chrome-storage-state.json",
+  "timezone": "America/Vancouver",
+  "reportDir": "../output/reports",
+  "maxResultsPerDate": 12,
+  "monthlyStayLength": 30,
+  "defaultAdults": 2
+}

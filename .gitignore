@@ -1,0 +1,9 @@
+.DS_Store
+.env.local
+.env
+.next
+node_modules
+npm-debug.log*
+server/automation/state/auth/*.json
+server/output/reports/*
+!server/output/reports/.gitkeep

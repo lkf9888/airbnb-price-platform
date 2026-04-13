@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: airbnb-price-platform
+    env: docker
+    plan: starter
+    autoDeploy: true
