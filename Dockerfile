@@ -4,15 +4,16 @@ WORKDIR /app
 
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV NODE_ENV=production
-ENV PORT=3000
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY . .
 
 RUN npm run build
+
+ENV NODE_ENV=production
+ENV PORT=3000
 
 EXPOSE 3000
 
