@@ -1,14 +1,16 @@
-FROM mcr.microsoft.com/playwright:v1.58.2-noble
+FROM mcr.microsoft.com/playwright:v1.59.1-noble
 
 WORKDIR /app
+
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV NODE_ENV=production
+ENV PORT=3000
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-
-ENV NODE_ENV=production
-ENV PORT=3000
 
 RUN npm run build
 
