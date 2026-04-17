@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Locale = "zh" | "en";
 type LocalePreference = "auto" | Locale;
@@ -717,6 +717,23 @@ export function MarketDashboard() {
   const [addressVerified, setAddressVerified] = useState(false);
   const [addressAutocompleteStatus, setAddressAutocompleteStatus] = useState<"unknown" | "ready" | "disabled">("unknown");
   const [addressSessionToken, setAddressSessionToken] = useState(() => createSessionToken());
+  const pollIntervalRef = useRef<number | null>(null);
+
+  function clearPolling() {
+    if (pollIntervalRef.current !== null) {
+      window.clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current !== null) {
+        window.clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const nextSystemLocale = detectSystemLocale();
@@ -887,6 +904,8 @@ export function MarketDashboard() {
     setLoading(true);
     setError(null);
     setDiagnosticUrls([]);
+    setResult(null);
+    clearPolling();
 
     try {
       const response = await fetch("/api/market-research", {
@@ -903,23 +922,76 @@ export function MarketDashboard() {
         }),
       });
 
-      const payload = (await response.json()) as ApiResponse & {
-        error?: string;
-        diagnosticUrls?: string[];
-      };
-      if (!response.ok) {
-        if (Array.isArray(payload.diagnosticUrls)) {
-          setDiagnosticUrls(payload.diagnosticUrls);
-        }
-        throw new Error(payload.error || t.errorPrefix);
+      const payload = await safeJson(response);
+
+      if (!response.ok || !payload.jobId) {
+        throw new Error(
+          payload.error || `${response.status} ${response.statusText || ""}`.trim() || t.errorPrefix,
+        );
       }
 
-      setResult(payload);
+      pollJob(String(payload.jobId));
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : t.errorPrefix);
-    } finally {
       setLoading(false);
     }
+  }
+
+  async function safeJson(response: Response): Promise<Record<string, unknown> & { error?: string }> {
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      const snippet = text.slice(0, 240).replace(/\s+/g, " ").trim();
+      return {
+        error:
+          locale === "zh"
+            ? `服务器返回了非 JSON 响应 (${response.status})：${snippet || "空"}`
+            : `Non-JSON response from server (${response.status}): ${snippet || "empty"}`,
+      };
+    }
+  }
+
+  function pollJob(jobId: string) {
+    clearPolling();
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/market-research?jobId=${encodeURIComponent(jobId)}`, {
+          headers: { "accept-language": locale },
+        });
+        const payload = await safeJson(res);
+
+        if (!res.ok) {
+          clearPolling();
+          setError(
+            payload.error || `${res.status} ${res.statusText || ""}`.trim() || t.errorPrefix,
+          );
+          setLoading(false);
+          return;
+        }
+
+        const status = payload.status;
+        if (status === "done") {
+          clearPolling();
+          setResult(payload as unknown as ApiResponse);
+          setLoading(false);
+          return;
+        }
+        if (status === "failed") {
+          clearPolling();
+          if (Array.isArray(payload.diagnosticUrls)) {
+            setDiagnosticUrls(payload.diagnosticUrls as string[]);
+          }
+          setError((payload.error as string) || t.errorPrefix);
+          setLoading(false);
+        }
+      } catch {
+        // transient network blip — keep polling
+      }
+    };
+
+    void tick();
+    pollIntervalRef.current = window.setInterval(tick, 4000);
   }
 
   function updateLocalePreference(value: LocalePreference) {
