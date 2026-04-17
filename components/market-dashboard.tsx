@@ -86,6 +86,9 @@ type AddressSuggestion = {
   text: string;
   mainText: string;
   secondaryText: string;
+  latitude?: number;
+  longitude?: number;
+  formattedAddress?: string;
 };
 
 const STORAGE_KEY = "airbnb-price-platform-locale";
@@ -109,12 +112,12 @@ const copy = {
     endDate: "结束日期",
     address: "房源地址",
     addressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
-    addressHint: "输入时会出现 Google Maps 建议地址，选中后自动回填标准地址。",
-    addressVerified: "已通过 Google Maps 标准化地址（将把 Airbnb 搜索限定在地址 2 km 范围内）",
-    addressSuggesting: "正在获取 Google Maps 地址建议...",
-    addressSelectPrompt: "请选择建议地址，能提高查价准确度。",
-    addressAutocompleteUnavailable: "未启用 Google Maps 地址建议。配置 API key 后可开启。",
-    poweredByGoogle: "Powered by Google Maps",
+    addressHint: "输入时会出现地址建议（Photon / OpenStreetMap），选中后自动回填并定位。",
+    addressVerified: "已选中地址（将把 Airbnb 搜索限定在该点 2 km 范围内）",
+    addressSuggesting: "正在获取地址建议...",
+    addressSelectPrompt: "请选择一条建议地址，能提高查价准确度。",
+    addressAutocompleteUnavailable: "地址建议暂时不可用，可直接输入完整地址后继续。",
+    poweredByGoogle: "Powered by Photon / OpenStreetMap",
     progressTitle: "执行进度",
     progressRunning: "系统正在抓取房价与生成报告，请稍候。",
     progressIdle: "提交后会在这里显示执行状态，帮助客户确认系统仍在运行。",
@@ -202,12 +205,12 @@ const copy = {
     endDate: "End date",
     address: "Address",
     addressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
-    addressHint: "Google Maps address suggestions appear while typing. Selecting one fills in a normalized address.",
-    addressVerified: "Normalized with Google Maps (Airbnb search will be restricted to a 2 km radius)",
-    addressSuggesting: "Loading Google Maps suggestions...",
-    addressSelectPrompt: "Choose a suggested address to improve lookup accuracy.",
-    addressAutocompleteUnavailable: "Google Maps suggestions are not enabled. Add an API key to turn them on.",
-    poweredByGoogle: "Powered by Google Maps",
+    addressHint: "Address suggestions (Photon / OpenStreetMap) appear while typing. Selecting one fills in the address and pins its location.",
+    addressVerified: "Address pinned — Airbnb search will be restricted to a 2 km radius around it",
+    addressSuggesting: "Loading address suggestions...",
+    addressSelectPrompt: "Select a suggested address to improve lookup accuracy.",
+    addressAutocompleteUnavailable: "Address suggestions are temporarily unavailable. You can still type the full address manually.",
+    poweredByGoogle: "Powered by Photon / OpenStreetMap",
     progressTitle: "Progress",
     progressRunning: "The system is fetching prices and generating the report. Please wait.",
     progressIdle: "Execution status will appear here after submission so customers know the system is still running.",
@@ -816,16 +819,10 @@ export function MarketDashboard() {
         );
 
         const payload = (await response.json().catch(() => null)) as
-          | { suggestions?: AddressSuggestion[]; error?: string; code?: string }
+          | { suggestions?: AddressSuggestion[]; error?: string }
           | null;
 
         if (!response.ok) {
-          if (payload?.code === "MISSING_API_KEY") {
-            setAddressAutocompleteStatus("disabled");
-            setAddressSuggestions([]);
-            return;
-          }
-
           throw new Error(payload?.error || "Address autocomplete failed.");
         }
 
@@ -848,66 +845,29 @@ export function MarketDashboard() {
     };
   }, [addressFocused, addressSessionToken, form.address, locale]);
 
-  async function selectAddressSuggestion(suggestion: AddressSuggestion) {
+  function selectAddressSuggestion(suggestion: AddressSuggestion) {
     setAddressFocused(false);
     setAddressSuggestions([]);
-    setForm((current) => ({ ...current, address: suggestion.text }));
-    setAddressLoading(true);
 
-    try {
-      const response = await fetch("/api/address-details", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          placeId: suggestion.placeId,
-          locale: toRequestLocale(locale),
-          sessionToken: addressSessionToken,
-        }),
+    const resolvedAddress = suggestion.formattedAddress || suggestion.text;
+
+    setAddressAutocompleteStatus("ready");
+    setAddressVerified(Boolean(resolvedAddress));
+
+    if (
+      typeof suggestion.latitude === "number" &&
+      typeof suggestion.longitude === "number"
+    ) {
+      setAddressLocation({
+        latitude: suggestion.latitude,
+        longitude: suggestion.longitude,
       });
-
-      const payload = (await response.json()) as {
-        formattedAddress?: string;
-        location?: { latitude?: number; longitude?: number } | null;
-        error?: string;
-        code?: string;
-      };
-
-      if (!response.ok) {
-        if (payload.code === "MISSING_API_KEY") {
-          setAddressAutocompleteStatus("disabled");
-        }
-        throw new Error(payload.error || "Address lookup failed.");
-      }
-
-      setAddressAutocompleteStatus("ready");
-      setAddressVerified(Boolean(payload.formattedAddress));
-
-      if (
-        payload.location &&
-        typeof payload.location.latitude === "number" &&
-        typeof payload.location.longitude === "number"
-      ) {
-        setAddressLocation({
-          latitude: payload.location.latitude,
-          longitude: payload.location.longitude,
-        });
-      } else {
-        setAddressLocation(null);
-      }
-
-      setForm((current) => ({
-        ...current,
-        address: payload.formattedAddress || suggestion.text,
-      }));
-      setAddressSessionToken(createSessionToken());
-    } catch {
-      setAddressVerified(false);
+    } else {
       setAddressLocation(null);
-    } finally {
-      setAddressLoading(false);
     }
+
+    setForm((current) => ({ ...current, address: resolvedAddress }));
+    setAddressSessionToken(createSessionToken());
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -1168,7 +1128,7 @@ export function MarketDashboard() {
                         type="button"
                         onMouseDown={(event) => {
                           event.preventDefault();
-                          void selectAddressSuggestion(suggestion);
+                          selectAddressSuggestion(suggestion);
                         }}
                         className="flex w-full items-start justify-between gap-3 border-t border-[#f6ece8] px-4 py-3 text-left first:border-t-0 hover:bg-[#fff6f4]"
                       >

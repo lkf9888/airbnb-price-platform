@@ -9,7 +9,7 @@
 - 返回日租/月租价格图
 - 输出最高价、最低价、平均价、中位数
 - 给出每日建议挂牌价和调价建议
-- 支持 Google Maps 地址自动建议
+- 支持基于 Photon / OpenStreetMap 的免费地址自动建议（不需要 API key）
 
 ## 本地运行
 
@@ -38,13 +38,12 @@
 
 复制 `.env.example` 为 `.env.local`，按需填写：
 
-- `GOOGLE_MAPS_API_KEY`
 - `AIRBNB_STORAGE_STATE_JSON`
 - `AIRBNB_STORAGE_STATE_BASE64`
 
 说明：
 
-- `GOOGLE_MAPS_API_KEY`：用于地址自动建议
+- 地址自动建议走 [Photon](https://photon.komoot.io)（免费、无需 API key）。
 - `AIRBNB_STORAGE_STATE_JSON`：部署环境可直接注入 Airbnb storage state JSON
 - `AIRBNB_STORAGE_STATE_BASE64`：如果不方便直接放 JSON，可用 base64 注入
 

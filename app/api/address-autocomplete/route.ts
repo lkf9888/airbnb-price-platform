@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const PHOTON_ENDPOINT = "https://photon.komoot.io/api/";
+const USER_AGENT = "airbnb-price-platform/1.0 (https://github.com/lkf9888/airbnb-price-platform)";
+
 function message(locale: "zh" | "en", zh: string, en: string) {
   return locale === "zh" ? zh : en;
 }
@@ -11,89 +14,134 @@ function resolveLocale(locale: string | null) {
   return locale?.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-function googleMapsApiKey() {
-  return process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY || "";
+type PhotonFeature = {
+  geometry?: {
+    coordinates?: [number, number];
+  };
+  properties?: {
+    osm_id?: number | string;
+    osm_type?: string;
+    osm_key?: string;
+    osm_value?: string;
+    name?: string;
+    street?: string;
+    housenumber?: string;
+    postcode?: string;
+    neighbourhood?: string;
+    suburb?: string;
+    district?: string;
+    city?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+    type?: string;
+  };
+};
+
+function buildMainText(props: PhotonFeature["properties"]) {
+  const parts: string[] = [];
+
+  if (props?.housenumber && props.street) {
+    parts.push(`${props.housenumber} ${props.street}`);
+  } else if (props?.street) {
+    parts.push(props.street);
+  } else if (props?.name) {
+    parts.push(props.name);
+  }
+
+  return parts.join(", ");
+}
+
+function buildSecondaryText(props: PhotonFeature["properties"]) {
+  const locality =
+    props?.city ||
+    props?.suburb ||
+    props?.neighbourhood ||
+    props?.district ||
+    props?.county ||
+    "";
+  const parts = [locality, props?.state, props?.country].filter(Boolean);
+  return parts.join(", ");
+}
+
+function buildFullText(mainText: string, secondaryText: string, props: PhotonFeature["properties"]) {
+  const combined = [mainText, secondaryText].filter(Boolean).join(", ");
+  if (combined) {
+    return combined;
+  }
+  return props?.name || "";
+}
+
+function buildPlaceId(props: PhotonFeature["properties"]) {
+  const type = (props?.osm_type || "N").toString().toUpperCase().slice(0, 1);
+  const id = props?.osm_id ?? "";
+  return `${type}${id}`;
 }
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const input = url.searchParams.get("input")?.trim() || "";
   const locale = resolveLocale(url.searchParams.get("locale"));
-  const sessionToken = url.searchParams.get("sessionToken")?.trim() || "";
 
   if (input.length < 3) {
     return NextResponse.json({ suggestions: [] });
   }
 
-  const apiKey = googleMapsApiKey();
-  if (!apiKey) {
-    return NextResponse.json(
-      {
-        code: "MISSING_API_KEY",
-        error: message(
-          locale,
-          "Google Maps 地址建议尚未启用。",
-          "Google Maps address suggestions are not enabled yet.",
-        ),
-      },
-      { status: 503 },
-    );
-  }
+  const photonUrl = new URL(PHOTON_ENDPOINT);
+  photonUrl.searchParams.set("q", input);
+  photonUrl.searchParams.set("limit", "8");
+  photonUrl.searchParams.set("lang", locale === "zh" ? "en" : "en");
 
   try {
-    const response = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
-      method: "POST",
+    const response = await fetch(photonUrl, {
+      method: "GET",
       headers: {
-        "content-type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask":
-          "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text,suggestions.placePrediction.structuredFormat.secondaryText.text",
+        "user-agent": USER_AGENT,
       },
-      body: JSON.stringify({
-        input,
-        sessionToken,
-        includeQueryPredictions: false,
-        languageCode: locale === "zh" ? "zh-CN" : "en",
-      }),
       cache: "no-store",
     });
-
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          suggestions?: Array<{
-            placePrediction?: {
-              placeId?: string;
-              text?: { text?: string };
-              structuredFormat?: {
-                mainText?: { text?: string };
-                secondaryText?: { text?: string };
-              };
-            };
-          }>;
-          error?: { message?: string };
-        }
-      | null;
 
     if (!response.ok) {
       return NextResponse.json(
         {
-          error:
-            payload?.error?.message ||
-            message(locale, "Google 地址建议请求失败。", "Google address suggestion request failed."),
+          error: message(
+            locale,
+            `地址建议服务返回错误 (${response.status})。`,
+            `Address suggestion service returned an error (${response.status}).`,
+          ),
         },
         { status: response.status },
       );
     }
 
-    const suggestions = (payload?.suggestions || [])
-      .map((item) => item.placePrediction)
-      .filter((item): item is NonNullable<typeof item> => Boolean(item?.placeId && item.text?.text))
-      .map((item) => ({
-        placeId: item.placeId!,
-        text: item.text?.text || "",
-        mainText: item.structuredFormat?.mainText?.text || item.text?.text || "",
-        secondaryText: item.structuredFormat?.secondaryText?.text || "",
-      }));
+    const payload = (await response.json().catch(() => null)) as
+      | { features?: PhotonFeature[] }
+      | null;
+
+    const suggestions = (payload?.features || [])
+      .filter((feature) => {
+        const coords = feature.geometry?.coordinates;
+        return Array.isArray(coords) && coords.length === 2 && feature.properties;
+      })
+      .map((feature) => {
+        const props = feature.properties;
+        const [longitude, latitude] = feature.geometry!.coordinates as [number, number];
+        const mainText = buildMainText(props) || props?.name || "";
+        const secondaryText = buildSecondaryText(props);
+        const text = buildFullText(mainText, secondaryText, props);
+
+        return {
+          placeId: buildPlaceId(props),
+          text,
+          mainText,
+          secondaryText,
+          latitude,
+          longitude,
+          formattedAddress: text,
+        };
+      })
+      .filter((suggestion) => Boolean(suggestion.text))
+      .slice(0, 8);
 
     return NextResponse.json({ suggestions });
   } catch (error) {
@@ -102,7 +150,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : message(locale, "Google 地址建议请求失败。", "Google address suggestion request failed."),
+            : message(locale, "地址建议请求失败。", "Address suggestion request failed."),
       },
       { status: 500 },
     );
