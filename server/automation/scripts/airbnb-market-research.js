@@ -146,6 +146,9 @@ function parseArgs(argv) {
     maxResultsPerDate: null,
     monthlyStayLength: null,
     reportDir: null,
+    centerLat: null,
+    centerLng: null,
+    radiusKm: null,
     help: false,
   };
 
@@ -241,6 +244,25 @@ function parseArgs(argv) {
     if (arg === '--report-dir') {
       args.reportDir = argv[index + 1];
       index += 1;
+      continue;
+    }
+
+    if (arg === '--center-lat') {
+      args.centerLat = Number.parseFloat(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--center-lng') {
+      args.centerLng = Number.parseFloat(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--radius-km') {
+      args.radiusKm = Number.parseFloat(argv[index + 1]);
+      index += 1;
+      continue;
     }
   }
 
@@ -270,6 +292,9 @@ Options:
   --max-results <number>  Max comparable listings per date
   --monthly-nights <n>    Length of monthly stay, default 30
   --report-dir <path>     Output folder for html/json report
+  --center-lat <number>   Center latitude for map-bounded search
+  --center-lng <number>   Center longitude for map-bounded search
+  --radius-km <number>    Bounding box radius in km (default 2)
   --help, -h              Show this message
 `);
 }
@@ -543,6 +568,13 @@ async function collectResearchInput(args, config) {
   const monthlyStayLength = Number.isInteger(args.monthlyStayLength) ? args.monthlyStayLength : config.monthlyStayLength;
   const requestedTypes = resolveRequestedTypes(roomTypeInput, args.propertyType);
 
+  const centerLat = Number.isFinite(args.centerLat) ? args.centerLat : null;
+  const centerLng = Number.isFinite(args.centerLng) ? args.centerLng : null;
+  const radiusKm = Number.isFinite(args.radiusKm) && args.radiusKm > 0 ? args.radiusKm : 2;
+  const bounds = centerLat !== null && centerLng !== null
+    ? computeBoundingBox(centerLat, centerLng, radiusKm)
+    : null;
+
   return {
     startDate,
     endDate,
@@ -555,6 +587,10 @@ async function collectResearchInput(args, config) {
     maxResultsPerDate,
     monthlyStayLength,
     reportDir: args.reportDir ? path.resolve(args.reportDir) : config.reportDir,
+    centerLat,
+    centerLng,
+    radiusKm,
+    bounds,
   };
 }
 
@@ -703,6 +739,19 @@ async function ensureSearchPageReady(page) {
   }
 }
 
+function computeBoundingBox(centerLat, centerLng, radiusKm) {
+  const DEG_KM = 111.32;
+  const latDelta = radiusKm / DEG_KM;
+  const cosLat = Math.max(Math.cos((centerLat * Math.PI) / 180), 0.01);
+  const lngDelta = radiusKm / (DEG_KM * cosLat);
+  return {
+    neLat: centerLat + latDelta,
+    neLng: centerLng + lngDelta,
+    swLat: centerLat - latDelta,
+    swLng: centerLng - lngDelta,
+  };
+}
+
 function buildSearchUrl(config, params) {
   const searchUrl = new URL(config.searchBaseUrl);
   searchUrl.searchParams.set('query', params.address);
@@ -710,7 +759,19 @@ function buildSearchUrl(config, params) {
   searchUrl.searchParams.set('checkout', params.checkOut);
   searchUrl.searchParams.set('adults', String(params.adults));
   searchUrl.searchParams.set('source', 'structured_search_input_header');
-  searchUrl.searchParams.set('search_type', 'user_map_move');
+
+  if (params.bounds) {
+    searchUrl.searchParams.set('ne_lat', params.bounds.neLat.toFixed(6));
+    searchUrl.searchParams.set('ne_lng', params.bounds.neLng.toFixed(6));
+    searchUrl.searchParams.set('sw_lat', params.bounds.swLat.toFixed(6));
+    searchUrl.searchParams.set('sw_lng', params.bounds.swLng.toFixed(6));
+    searchUrl.searchParams.set('search_by_map', 'true');
+    searchUrl.searchParams.set('zoom', '14');
+    searchUrl.searchParams.set('search_type', 'user_map_move');
+  } else {
+    searchUrl.searchParams.set('search_type', 'user_map_move');
+  }
+
   return searchUrl.toString();
 }
 
@@ -1100,9 +1161,14 @@ function roundCurrency(value) {
   return Math.round(value);
 }
 
-function summarizeDateResult(date, stayType, comparableCards, matchLabel) {
+function summarizeDateResult(date, stayType, comparableCards, matchLabel, wanted) {
   const prices = comparableCards.map((card) => card.price);
   const stats = calcSeriesStats(prices);
+
+  const wantedBedrooms = wanted && Number.isFinite(wanted.bedrooms) ? wanted.bedrooms : null;
+  const displayCards = wantedBedrooms !== null
+    ? comparableCards.filter((card) => !Number.isFinite(card.bedrooms) || card.bedrooms === wantedBedrooms)
+    : comparableCards;
 
   return {
     date,
@@ -1110,7 +1176,7 @@ function summarizeDateResult(date, stayType, comparableCards, matchLabel) {
     comparableCount: comparableCards.length,
     matchLabel,
     priceStats: stats,
-    sampleListings: comparableCards.slice(0, 5).map((card) => ({
+    sampleListings: displayCards.slice(0, 5).map((card) => ({
       href: card.href,
       price: card.price,
       priceBasis: card.priceBasis,
@@ -1676,6 +1742,7 @@ async function runSingleSearch(page, config, input, date, stayType) {
     checkIn,
     checkOut,
     adults: input.adults,
+    bounds: input.bounds,
   });
 
   const rawCards = await scrapeRawCards(page, input.maxResultsPerDate);
@@ -1686,7 +1753,7 @@ async function runSingleSearch(page, config, input, date, stayType) {
 
   const parsedCards = rawCards.map((card) => parseCard(card, stayType, input.monthlyStayLength));
   const selected = selectComparables(parsedCards, input);
-  return summarizeDateResult(date, stayType, selected.cards.slice(0, input.maxResultsPerDate), selected.matchLabel);
+  return summarizeDateResult(date, stayType, selected.cards.slice(0, input.maxResultsPerDate), selected.matchLabel, input);
 }
 
 async function runResearch(page, config, input) {

@@ -110,7 +110,7 @@ const copy = {
     address: "房源地址",
     addressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
     addressHint: "输入时会出现 Google Maps 建议地址，选中后自动回填标准地址。",
-    addressVerified: "已通过 Google Maps 标准化地址",
+    addressVerified: "已通过 Google Maps 标准化地址（将把 Airbnb 搜索限定在地址 2 km 范围内）",
     addressSuggesting: "正在获取 Google Maps 地址建议...",
     addressSelectPrompt: "请选择建议地址，能提高查价准确度。",
     addressAutocompleteUnavailable: "未启用 Google Maps 地址建议。配置 API key 后可开启。",
@@ -203,7 +203,7 @@ const copy = {
     address: "Address",
     addressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
     addressHint: "Google Maps address suggestions appear while typing. Selecting one fills in a normalized address.",
-    addressVerified: "Normalized with Google Maps",
+    addressVerified: "Normalized with Google Maps (Airbnb search will be restricted to a 2 km radius)",
     addressSuggesting: "Loading Google Maps suggestions...",
     addressSelectPrompt: "Choose a suggested address to improve lookup accuracy.",
     addressAutocompleteUnavailable: "Google Maps suggestions are not enabled. Add an API key to turn them on.",
@@ -738,6 +738,7 @@ export function MarketDashboard() {
   const [addressLoading, setAddressLoading] = useState(false);
   const [addressFocused, setAddressFocused] = useState(false);
   const [addressVerified, setAddressVerified] = useState(false);
+  const [addressLocation, setAddressLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [addressAutocompleteStatus, setAddressAutocompleteStatus] = useState<"unknown" | "ready" | "disabled">("unknown");
   const [addressSessionToken, setAddressSessionToken] = useState(() => createSessionToken());
   const pollIntervalRef = useRef<number | null>(null);
@@ -868,6 +869,7 @@ export function MarketDashboard() {
 
       const payload = (await response.json()) as {
         formattedAddress?: string;
+        location?: { latitude?: number; longitude?: number } | null;
         error?: string;
         code?: string;
       };
@@ -881,6 +883,20 @@ export function MarketDashboard() {
 
       setAddressAutocompleteStatus("ready");
       setAddressVerified(Boolean(payload.formattedAddress));
+
+      if (
+        payload.location &&
+        typeof payload.location.latitude === "number" &&
+        typeof payload.location.longitude === "number"
+      ) {
+        setAddressLocation({
+          latitude: payload.location.latitude,
+          longitude: payload.location.longitude,
+        });
+      } else {
+        setAddressLocation(null);
+      }
+
       setForm((current) => ({
         ...current,
         address: payload.formattedAddress || suggestion.text,
@@ -888,6 +904,7 @@ export function MarketDashboard() {
       setAddressSessionToken(createSessionToken());
     } catch {
       setAddressVerified(false);
+      setAddressLocation(null);
     } finally {
       setAddressLoading(false);
     }
@@ -942,6 +959,13 @@ export function MarketDashboard() {
           bedrooms: bedroomsNumber,
           bathrooms: bathroomsNumber,
           locale: toRequestLocale(locale),
+          ...(addressLocation
+            ? {
+                centerLat: addressLocation.latitude,
+                centerLng: addressLocation.longitude,
+                radiusKm: 2,
+              }
+            : {}),
         }),
       });
 
@@ -1126,6 +1150,7 @@ export function MarketDashboard() {
                   onChange={(event) => {
                     const nextAddress = event.target.value;
                     setAddressVerified(false);
+                    setAddressLocation(null);
                     setForm((current) => ({ ...current, address: nextAddress }));
                     if (!nextAddress.trim()) {
                       setAddressSuggestions([]);

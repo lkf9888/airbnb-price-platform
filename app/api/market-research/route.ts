@@ -47,6 +47,9 @@ const requestSchema = z.object({
   bedrooms: z.coerce.number().min(0).max(20),
   bathrooms: z.coerce.number().min(0).max(20),
   locale: z.enum(["zh", "en"]).optional(),
+  centerLat: z.number().min(-90).max(90).optional(),
+  centerLng: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().min(0.1).max(50).optional(),
 });
 
 function resolveLocale(request: Request, locale?: "zh" | "en") {
@@ -183,6 +186,14 @@ export async function POST(request: Request) {
 
   if (input.propertyType && input.propertyType.trim()) {
     args.push("--property-type", input.propertyType.trim());
+  }
+
+  if (typeof input.centerLat === "number" && typeof input.centerLng === "number") {
+    args.push("--center-lat", String(input.centerLat));
+    args.push("--center-lng", String(input.centerLng));
+    if (typeof input.radiusKm === "number") {
+      args.push("--radius-km", String(input.radiusKm));
+    }
   }
 
   const jobId = randomUUID();
