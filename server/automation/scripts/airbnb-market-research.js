@@ -16,7 +16,7 @@ const MIN_COMPARABLES_PER_STRATEGY = 3;
 const BROWSER_CONFIGS = {
   chromium: {
     engine: chromium,
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: process.env.AIRBNB_CHROME_EXECUTABLE_PATH || '',
     launchOptions: {
       args: [
         '--disable-blink-features=AutomationControlled',
@@ -789,7 +789,7 @@ async function scrapeRawCards(page, maxResults) {
       }
     }
 
-    if (uniqueCards.size >= maxResults) {
+    if (uniqueCards.size >= maxResults * 2) {
       break;
     }
 
@@ -887,11 +887,24 @@ function parseCard(rawCard, stayType, monthlyStayLength) {
   let selectedBasis = 'unknown';
 
   if (stayType === 'daily') {
-    selectedPrice = nightlyCandidate || totalCandidate || fallbackCandidate;
-    selectedBasis = nightlyCandidate ? 'nightly' : (totalCandidate ? 'total' : 'fallback');
+    if (nightlyCandidate) {
+      selectedPrice = nightlyCandidate;
+      selectedBasis = 'nightly';
+    } else {
+      selectedPrice = null;
+      selectedBasis = 'unknown';
+    }
   } else {
-    selectedPrice = monthlyCandidate || totalCandidate || fallbackCandidate;
-    selectedBasis = monthlyCandidate ? 'monthly' : (totalCandidate ? 'total' : 'fallback');
+    if (monthlyCandidate) {
+      selectedPrice = monthlyCandidate;
+      selectedBasis = 'monthly';
+    } else if (totalCandidate) {
+      selectedPrice = totalCandidate;
+      selectedBasis = 'total';
+    } else if (fallbackCandidate) {
+      selectedPrice = fallbackCandidate;
+      selectedBasis = 'fallback';
+    }
   }
 
   const monthlyTotal = stayType === 'monthly'

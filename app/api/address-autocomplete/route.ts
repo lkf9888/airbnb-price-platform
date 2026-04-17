@@ -53,6 +53,7 @@ export async function GET(request: Request) {
         input,
         sessionToken,
         includeQueryPredictions: false,
+        languageCode: locale === "zh" ? "zh-CN" : "en",
       }),
       cache: "no-store",
     });

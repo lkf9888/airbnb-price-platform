@@ -54,6 +54,8 @@ export async function POST(request: Request) {
       detailsUrl.searchParams.set("sessionToken", parsed.data.sessionToken);
     }
 
+    detailsUrl.searchParams.set("languageCode", locale === "zh" ? "zh-CN" : "en");
+
     const response = await fetch(detailsUrl, {
       method: "GET",
       headers: {

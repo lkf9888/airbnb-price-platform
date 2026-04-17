@@ -75,6 +75,8 @@ type ApiResponse = {
   report: Report;
   savedJsonPath: string;
   savedHtmlPath: string;
+  reportJsonUrl?: string;
+  reportHtmlUrl?: string;
   stdout: string;
   stderr: string;
 };
@@ -353,6 +355,8 @@ function translatePlanNote(value: string, locale: Locale) {
     "建议贴近市场中位数挂牌": "Stay close to the market median for the initial list price.",
     "偏弱日期，建议保守定价": "Softer date. A conservative price is recommended.",
     "略弱于均值，建议平价吸单": "Slightly weaker than average. A competitive price should help conversion.",
+    "需求偏强，可小幅上调": "Demand is slightly elevated. A modest price increase is reasonable.",
+    "没有足够的日租样本": "Not enough daily rate samples for this date.",
   };
 
   return mapping[value] || value;
@@ -696,7 +700,7 @@ export function MarketDashboard() {
     startDate: "",
     endDate: "",
     address: "",
-    propertyType: "公寓",
+    propertyType: "",
     roomType: "整套房源",
     bedrooms: "2",
     bathrooms: "2",
@@ -803,8 +807,9 @@ export function MarketDashboard() {
   }, [addressFocused, addressSessionToken, form.address, locale]);
 
   async function selectAddressSuggestion(suggestion: AddressSuggestion) {
-    setForm((current) => ({ ...current, address: suggestion.text }));
+    setAddressFocused(false);
     setAddressSuggestions([]);
+    setForm((current) => ({ ...current, address: suggestion.text }));
     setAddressLoading(true);
 
     try {
@@ -839,7 +844,6 @@ export function MarketDashboard() {
         ...current,
         address: payload.formattedAddress || suggestion.text,
       }));
-      setAddressFocused(false);
       setAddressSessionToken(createSessionToken());
     } catch {
       setAddressVerified(false);
@@ -850,6 +854,34 @@ export function MarketDashboard() {
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const bedroomsNumber = Number(form.bedrooms);
+    const bathroomsNumber = Number(form.bathrooms);
+
+    if (!form.startDate || !form.endDate) {
+      setError(locale === "zh" ? "请选择开始日期和结束日期。" : "Please select both start and end dates.");
+      setHasLookupStarted(false);
+      return;
+    }
+
+    if (form.address.trim().length < 5) {
+      setError(locale === "zh" ? "请输入完整地址（至少 5 个字符）。" : "Please enter a complete address (at least 5 characters).");
+      setHasLookupStarted(false);
+      return;
+    }
+
+    if (!Number.isFinite(bedroomsNumber) || bedroomsNumber < 0) {
+      setError(locale === "zh" ? "卧室数量必须是 0 或以上的数字。" : "Bedrooms must be a number of 0 or more.");
+      setHasLookupStarted(false);
+      return;
+    }
+
+    if (!Number.isFinite(bathroomsNumber) || bathroomsNumber < 0) {
+      setError(locale === "zh" ? "卫生间数量必须是 0 或以上的数字。" : "Bathrooms must be a number of 0 or more.");
+      setHasLookupStarted(false);
+      return;
+    }
+
     setHasLookupStarted(true);
     setLoading(true);
     setError(null);
@@ -863,8 +895,8 @@ export function MarketDashboard() {
         },
         body: JSON.stringify({
           ...form,
-          bedrooms: Number(form.bedrooms),
-          bathrooms: Number(form.bathrooms),
+          bedrooms: bedroomsNumber,
+          bathrooms: bathroomsNumber,
           locale: toRequestLocale(locale),
         }),
       });
@@ -1168,8 +1200,8 @@ export function MarketDashboard() {
             <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
               <h2 className="text-xl font-semibold text-[var(--ink)]">{t.recommendations}</h2>
               <div className="mt-4 grid gap-2.5">
-                {result.report.recommendations.map((item) => (
-                  <div key={item} className="rounded-[1.1rem] border border-[#ffd7dc] bg-[#fff7f7] px-4 py-3 text-sm leading-6 text-[#4f3f3f]">
+                {result.report.recommendations.map((item, index) => (
+                  <div key={`${index}-${item}`} className="rounded-[1.1rem] border border-[#ffd7dc] bg-[#fff7f7] px-4 py-3 text-sm leading-6 text-[#4f3f3f]">
                     {translateRecommendation(item, locale)}
                   </div>
                 ))}
@@ -1264,8 +1296,36 @@ export function MarketDashboard() {
                   </p>
                 </div>
                 <div className="text-xs leading-5 text-[var(--muted)]">
-                  <div>{t.htmlReport}: {result.savedHtmlPath}</div>
-                  <div>{t.jsonData}: {result.savedJsonPath}</div>
+                  <div>
+                    {t.htmlReport}:{" "}
+                    {result.reportHtmlUrl ? (
+                      <a
+                        href={result.reportHtmlUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[var(--accent-deep)] underline"
+                      >
+                        {result.reportHtmlUrl}
+                      </a>
+                    ) : (
+                      result.savedHtmlPath
+                    )}
+                  </div>
+                  <div>
+                    {t.jsonData}:{" "}
+                    {result.reportJsonUrl ? (
+                      <a
+                        href={result.reportJsonUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[var(--accent-deep)] underline"
+                      >
+                        {result.reportJsonUrl}
+                      </a>
+                    ) : (
+                      result.savedJsonPath
+                    )}
+                  </div>
                 </div>
               </div>
 

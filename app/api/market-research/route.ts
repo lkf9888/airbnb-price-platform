@@ -11,6 +11,33 @@ const execFileAsync = promisify(execFile);
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 3;
+const rateLimitBuckets = new Map<string, number[]>();
+
+function clientIp(request: Request) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+function consumeRateLimit(ip: string) {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const timestamps = (rateLimitBuckets.get(ip) || []).filter((value) => value > windowStart);
+
+  if (timestamps.length >= RATE_LIMIT_MAX_REQUESTS) {
+    rateLimitBuckets.set(ip, timestamps);
+    return false;
+  }
+
+  timestamps.push(now);
+  rateLimitBuckets.set(ip, timestamps);
+  return true;
+}
+
 const requestSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -79,6 +106,19 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(body);
   const locale = resolveLocale(request, body?.locale);
 
+  if (!consumeRateLimit(clientIp(request))) {
+    return NextResponse.json(
+      {
+        error: message(
+          locale,
+          "查价请求太频繁，请稍后再试。",
+          "Too many lookup requests. Please try again later.",
+        ),
+      },
+      { status: 429 },
+    );
+  }
+
   if (!parsed.success) {
     return NextResponse.json(
       {
@@ -116,7 +156,7 @@ export async function POST(request: Request) {
     const { stdout, stderr } = await execFileAsync("node", args, {
       cwd: repoRoot(),
       timeout: 10 * 60 * 1000,
-      maxBuffer: 8 * 1024 * 1024,
+      maxBuffer: 64 * 1024 * 1024,
     });
 
     const combinedOutput = `${stdout}\n${stderr}`;
@@ -138,11 +178,15 @@ export async function POST(request: Request) {
     }
 
     const report = JSON.parse(await fs.readFile(jsonPath, "utf8"));
+    const jsonFileName = path.basename(jsonPath);
+    const htmlFileName = jsonFileName.replace(/\.json$/i, ".html");
 
     return NextResponse.json({
       report,
       savedJsonPath: jsonPath,
       savedHtmlPath: jsonPath.replace(/\.json$/i, ".html"),
+      reportJsonUrl: `/api/reports/${encodeURIComponent(jsonFileName)}`,
+      reportHtmlUrl: `/api/reports/${encodeURIComponent(htmlFileName)}`,
       stdout,
       stderr,
     });
