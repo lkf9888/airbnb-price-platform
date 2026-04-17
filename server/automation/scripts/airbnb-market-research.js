@@ -1118,7 +1118,7 @@ function summarizeDateResult(date, stayType, comparableCards, matchLabel) {
       bathrooms: card.bathrooms,
       roomType: card.roomType ? card.roomType.display : null,
       propertyType: card.propertyType ? card.propertyType.display : null,
-      textSnippet: card.text ? String(card.text).slice(0, 220) : '',
+      textSnippet: card.text ? String(card.text).slice(0, 800) : '',
     })),
   };
 }

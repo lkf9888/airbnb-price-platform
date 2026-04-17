@@ -123,7 +123,7 @@ const copy = {
     progressDone: "已完成",
     similarListings: "建议的 5 个附近类似房源",
     similarListingsDesc: "基于本次查价抓到的可比样本重新筛选，优先保留与输入地址城市/区域更相关的 Airbnb 房源。",
-    similarListingsNone: "这次查价结果里还没有可展示的房源链接。",
+    similarListingsNone: "没有找到位于你输入地址附近的可比房源。可尝试选中 Google Maps 建议里更精确的地址，或放宽物业/房型条件后再查一次。",
     similarOpen: "打开 Airbnb",
     similarSeenIn: "出现于",
     similarDaily: "日租样本",
@@ -216,7 +216,7 @@ const copy = {
     progressDone: "Done",
     similarListings: "5 Suggested Nearby Comparable Listings",
     similarListingsDesc: "Rescored from this lookup's comparable samples, with priority given to listings whose card text is more related to the input city or area.",
-    similarListingsNone: "No comparable Airbnb links are available in this lookup yet.",
+    similarListingsNone: "No comparable Airbnb listings near your input address were found. Try selecting a more precise Google Maps suggestion, or loosen the property/room-type filters and run the lookup again.",
     similarOpen: "Open on Airbnb",
     similarSeenIn: "Seen in",
     similarDaily: "Daily samples",
@@ -465,6 +465,26 @@ function calcSummary(values: Array<number | null | undefined>) {
 }
 
 function addressTokens(address: string) {
+  const stopwords = new Set([
+    "road",
+    "street",
+    "drive",
+    "lane",
+    "unit",
+    "avenue",
+    "boulevard",
+    "place",
+    "court",
+    "way",
+    "british",
+    "columbia",
+    "canada",
+    "usa",
+    "apt",
+    "suite",
+    "floor",
+  ]);
+
   return Array.from(
     new Set(
       String(address || "")
@@ -472,7 +492,7 @@ function addressTokens(address: string) {
         .split(/[^a-z0-9\u4e00-\u9fff]+/i)
         .map((token) => token.trim())
         .filter((token) => token.length >= 3 && !/^\d+$/.test(token))
-        .filter((token) => !["road", "street", "drive", "lane", "unit", "avenue", "british", "columbia"].includes(token)),
+        .filter((token) => !stopwords.has(token)),
     ),
   );
 }
@@ -580,12 +600,15 @@ function buildSuggestedListings(rows: Report["rows"], input: Report["input"]) {
     }
   }
 
-  return Array.from(merged.values())
-    .sort((left, right) => {
-      if (Number(right.addressMatched) !== Number(left.addressMatched)) {
-        return Number(right.addressMatched) - Number(left.addressMatched);
-      }
+  const entries = Array.from(merged.values());
+  const addressMatched = entries.filter((entry) => entry.addressMatched);
 
+  if (tokens.length === 0 || addressMatched.length === 0) {
+    return [];
+  }
+
+  return addressMatched
+    .sort((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
       }
