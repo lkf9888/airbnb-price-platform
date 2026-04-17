@@ -708,6 +708,7 @@ export function MarketDashboard() {
   const [loading, setLoading] = useState(false);
   const [hasLookupStarted, setHasLookupStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [diagnosticUrls, setDiagnosticUrls] = useState<string[]>([]);
   const [result, setResult] = useState<ApiResponse | null>(null);
   const [systemLocale, setSystemLocale] = useState<Locale>("zh");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
@@ -885,6 +886,7 @@ export function MarketDashboard() {
     setHasLookupStarted(true);
     setLoading(true);
     setError(null);
+    setDiagnosticUrls([]);
 
     try {
       const response = await fetch("/api/market-research", {
@@ -901,8 +903,14 @@ export function MarketDashboard() {
         }),
       });
 
-      const payload = (await response.json()) as ApiResponse & { error?: string };
+      const payload = (await response.json()) as ApiResponse & {
+        error?: string;
+        diagnosticUrls?: string[];
+      };
       if (!response.ok) {
+        if (Array.isArray(payload.diagnosticUrls)) {
+          setDiagnosticUrls(payload.diagnosticUrls);
+        }
         throw new Error(payload.error || t.errorPrefix);
       }
 
@@ -1162,7 +1170,25 @@ export function MarketDashboard() {
 
           {error ? (
             <div className="mt-3 rounded-[1.1rem] border border-rose-200 bg-[var(--accent-soft)] px-4 py-3 text-sm text-rose-700">
-              {t.errorPrefix}: {error}
+              <div>{t.errorPrefix}: {error}</div>
+              {diagnosticUrls.length ? (
+                <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                  <span className="text-rose-900/80">
+                    {locale === "zh" ? "诊断文件:" : "Diagnostics:"}
+                  </span>
+                  {diagnosticUrls.map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline text-rose-900"
+                    >
+                      {url.split("/").pop()}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>

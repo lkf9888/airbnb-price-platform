@@ -79,6 +79,16 @@ function extractReportPath(output: string) {
   return matched ? matched[1].trim() : null;
 }
 
+function extractDiagnosticUrls(output: string) {
+  const names = new Set<string>();
+
+  for (const match of output.matchAll(/Saved diagnostic (?:screenshot|HTML):\s+(\S+)$/gm)) {
+    names.add(match[1].trim());
+  }
+
+  return Array.from(names).map((name) => `/api/reports/${encodeURIComponent(name)}`);
+}
+
 async function ensureAirbnbStorageState() {
   const targetPath = storageStatePath();
 
@@ -192,11 +202,13 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const failure = error as Error & { stdout?: string; stderr?: string };
+    const combined = `${failure.stdout || ""}\n${failure.stderr || ""}`;
     return NextResponse.json(
       {
         error: failure.message || message(locale, "查价执行失败。", "Price lookup failed."),
         stdout: failure.stdout || "",
         stderr: failure.stderr || "",
+        diagnosticUrls: extractDiagnosticUrls(combined),
       },
       { status: 500 },
     );

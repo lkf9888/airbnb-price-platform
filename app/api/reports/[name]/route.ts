@@ -17,6 +17,9 @@ function resolveContentType(name: string) {
   if (name.toLowerCase().endsWith(".json")) {
     return "application/json; charset=utf-8";
   }
+  if (name.toLowerCase().endsWith(".png")) {
+    return "image/png";
+  }
   return "application/octet-stream";
 }
 
@@ -27,7 +30,7 @@ export async function GET(
   const { name } = await params;
   const decoded = decodeURIComponent(name);
 
-  if (!/^[A-Za-z0-9._-]+\.(html|json)$/i.test(decoded)) {
+  if (!/^[A-Za-z0-9._-]+\.(html|json|png)$/i.test(decoded)) {
     return NextResponse.json({ error: "Invalid report name." }, { status: 400 });
   }
 

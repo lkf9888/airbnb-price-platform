@@ -714,10 +714,46 @@ function buildSearchUrl(config, params) {
   return searchUrl.toString();
 }
 
+async function recordGotoFailure(page, label) {
+  const reportDir = path.resolve(PROJECT_ROOT, '..', 'output', 'reports');
+  ensureDir(reportDir);
+  const stamp = Date.now();
+  const safeLabel = String(label || 'goto').replace(/[^A-Za-z0-9._-]+/g, '-');
+  const screenshotName = `diagnostic-${safeLabel}-${stamp}.png`;
+  const htmlName = `diagnostic-${safeLabel}-${stamp}.html`;
+
+  try {
+    const currentUrl = page.url();
+    log(`Diagnostic captured URL: ${currentUrl}`);
+  } catch {}
+
+  try {
+    await page.screenshot({ path: path.join(reportDir, screenshotName), fullPage: true });
+    log(`Saved diagnostic screenshot: ${screenshotName}`);
+  } catch (error) {
+    log(`Failed to capture diagnostic screenshot: ${error.message}`);
+  }
+
+  try {
+    const html = await page.content();
+    fs.writeFileSync(path.join(reportDir, htmlName), html, 'utf8');
+    log(`Saved diagnostic HTML: ${htmlName}`);
+  } catch (error) {
+    log(`Failed to capture diagnostic HTML: ${error.message}`);
+  }
+}
+
 async function navigateToSearch(page, config, params) {
   const url = buildSearchUrl(config, params);
   log(`Opening Airbnb search for ${params.checkIn} -> ${params.checkOut}`);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  } catch (error) {
+    await recordGotoFailure(page, `${params.checkIn}-${params.checkOut}`);
+    throw error;
+  }
+
   await ensureSearchPageReady(page);
   await page.mouse.wheel(0, 900);
   await pause(1000);
