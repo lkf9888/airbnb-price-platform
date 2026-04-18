@@ -13,7 +13,8 @@ const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 3;
 const rateLimitBuckets = new Map<string, number[]>();
 
-const STALE_RUNNING_MS = 12 * 60 * 1000;
+const STALE_RUNNING_MS = 45 * 60 * 1000;
+const STALE_HEARTBEAT_MS = 8 * 60 * 1000;
 
 function clientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -199,12 +200,32 @@ export async function POST(request: Request) {
   const jobId = randomUUID();
   const startedAt = new Date().toISOString();
 
-  await writeJobState(jobId, {
-    jobId,
-    status: "running",
-    startedAt,
-    input,
-  });
+  const startMs = Date.parse(input.startDate);
+  const endMs = Date.parse(input.endDate);
+  const totalDays = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
+    ? Math.round((endMs - startMs) / (24 * 3600 * 1000)) + 1
+    : 0;
+
+  let completedDays = 0;
+  let currentDate: string | null = null;
+  let lastUpdatedAt = startedAt;
+
+  const writeRunningState = () => {
+    void writeJobState(jobId, {
+      jobId,
+      status: "running",
+      startedAt,
+      lastUpdatedAt,
+      input,
+      progress: {
+        totalDays,
+        completedDays,
+        currentDate,
+      },
+    }).catch(() => {});
+  };
+
+  await writeRunningState();
 
   let stdoutBuf = "";
   let stderrBuf = "";
@@ -214,7 +235,24 @@ export async function POST(request: Request) {
   });
 
   child.stdout?.on("data", (chunk: Buffer) => {
-    stdoutBuf += chunk.toString();
+    const text = chunk.toString();
+    stdoutBuf += text;
+
+    const researchingPattern = /Researching (\d{4}-\d{2}-\d{2})/g;
+    let match;
+    let changed = false;
+    while ((match = researchingPattern.exec(text)) !== null) {
+      if (currentDate !== null) {
+        completedDays += 1;
+      }
+      currentDate = match[1];
+      changed = true;
+    }
+
+    if (changed) {
+      lastUpdatedAt = new Date().toISOString();
+      writeRunningState();
+    }
   });
 
   child.stderr?.on("data", (chunk: Buffer) => {
@@ -321,14 +359,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Job not found." }, { status: 404 });
   }
 
-  if (state.status === "running" && typeof state.startedAt === "string") {
-    const startedAtMs = Date.parse(state.startedAt);
-    if (Number.isFinite(startedAtMs) && Date.now() - startedAtMs > STALE_RUNNING_MS) {
+  if (state.status === "running") {
+    const now = Date.now();
+    const startedAtMs = typeof state.startedAt === "string" ? Date.parse(state.startedAt) : NaN;
+    const lastUpdatedAtMs = typeof state.lastUpdatedAt === "string"
+      ? Date.parse(state.lastUpdatedAt)
+      : startedAtMs;
+
+    const startedTooLongAgo = Number.isFinite(startedAtMs) && now - startedAtMs > STALE_RUNNING_MS;
+    const noHeartbeat = Number.isFinite(lastUpdatedAtMs) && now - lastUpdatedAtMs > STALE_HEARTBEAT_MS;
+
+    if (startedTooLongAgo || noHeartbeat) {
       const stale = {
         ...state,
         status: "failed",
         finishedAt: new Date().toISOString(),
-        error: "Job appears stale. The worker may have crashed or been restarted.",
+        error: startedTooLongAgo
+          ? "Job ran past the maximum 45 minute window. Try a shorter date range."
+          : "No progress from the worker for 8 minutes. It likely crashed or was killed mid-run.",
       };
       await writeJobState(jobId, stale).catch(() => {});
       return NextResponse.json(stale);

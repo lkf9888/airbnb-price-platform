@@ -735,6 +735,11 @@ export function MarketDashboard() {
   const [hasLookupStarted, setHasLookupStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [diagnosticUrls, setDiagnosticUrls] = useState<string[]>([]);
+  const [progress, setProgress] = useState<{
+    totalDays: number;
+    completedDays: number;
+    currentDate: string | null;
+  } | null>(null);
   const [result, setResult] = useState<ApiResponse | null>(null);
   const [systemLocale, setSystemLocale] = useState<Locale>("zh");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
@@ -904,6 +909,7 @@ export function MarketDashboard() {
     setLoading(true);
     setError(null);
     setDiagnosticUrls([]);
+    setProgress(null);
     setResult(null);
     clearPolling();
 
@@ -980,17 +986,39 @@ export function MarketDashboard() {
         const status = payload.status;
         if (status === "done") {
           clearPolling();
+          setProgress(null);
           setResult(payload as unknown as ApiResponse);
           setLoading(false);
           return;
         }
         if (status === "failed") {
           clearPolling();
+          setProgress(null);
           if (Array.isArray(payload.diagnosticUrls)) {
             setDiagnosticUrls(payload.diagnosticUrls as string[]);
           }
           setError((payload.error as string) || t.errorPrefix);
           setLoading(false);
+          return;
+        }
+
+        if (
+          payload.progress &&
+          typeof payload.progress === "object" &&
+          payload.progress !== null
+        ) {
+          const p = payload.progress as {
+            totalDays?: number;
+            completedDays?: number;
+            currentDate?: string | null;
+          };
+          if (typeof p.totalDays === "number" && typeof p.completedDays === "number") {
+            setProgress({
+              totalDays: p.totalDays,
+              completedDays: p.completedDays,
+              currentDate: p.currentDate ?? null,
+            });
+          }
         }
       } catch {
         // transient network blip — keep polling
@@ -1228,19 +1256,34 @@ export function MarketDashboard() {
                     </div>
                     <div className="mt-2 relative h-2.5 overflow-hidden rounded-full bg-[#f6d7dd]">
                       {loading ? (
-                        <div
-                          className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-[linear-gradient(90deg,#ff8da0,var(--accent),var(--accent-deep),#ff8da0)] shadow-[0_0_18px_rgba(255,56,92,0.24)]"
-                          style={{
-                            backgroundSize: "200% 100%",
-                            animation: "progress-indeterminate 1.35s ease-in-out infinite",
-                          }}
-                        />
+                        progress && progress.totalDays > 0 ? (
+                          <div
+                            className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-deep))] transition-all"
+                            style={{
+                              width: `${Math.min(100, Math.round((progress.completedDays / progress.totalDays) * 100))}%`,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className="absolute inset-y-0 left-0 w-[38%] rounded-full bg-[linear-gradient(90deg,#ff8da0,var(--accent),var(--accent-deep),#ff8da0)] shadow-[0_0_18px_rgba(255,56,92,0.24)]"
+                            style={{
+                              backgroundSize: "200% 100%",
+                              animation: "progress-indeterminate 1.35s ease-in-out infinite",
+                            }}
+                          />
+                        )
                       ) : (
                         <div className="h-full w-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-deep))]" />
                       )}
                     </div>
                     <div className="mt-2 text-xs text-[var(--muted)]">
-                      {loading ? t.progressRunning : t.progressDone}
+                      {loading
+                        ? progress && progress.totalDays > 0
+                          ? locale === "zh"
+                            ? `正在处理 ${progress.completedDays} / ${progress.totalDays} 天${progress.currentDate ? ` · 当前 ${progress.currentDate}` : ""}`
+                            : `Processing ${progress.completedDays} / ${progress.totalDays} days${progress.currentDate ? ` · current ${progress.currentDate}` : ""}`
+                          : t.progressRunning
+                        : t.progressDone}
                     </div>
                   </div>
                 ) : null}
