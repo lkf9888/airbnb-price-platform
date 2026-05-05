@@ -764,10 +764,10 @@ function SummaryCard({
   hint: string;
 }) {
   return (
-    <div className="rounded-[1.25rem] border border-[var(--line)] bg-white/96 px-4 py-3 shadow-[0_12px_30px_rgba(34,34,34,0.06)]">
-      <p className="text-[10px] uppercase tracking-[0.22em] text-[var(--accent-deep)]">{label}</p>
-      <p className="mt-1.5 text-[1.65rem] font-semibold text-[var(--ink)]">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{hint}</p>
+    <div className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 shadow-sm">
+      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{label}</p>
+      <p className="mt-1 text-xl font-semibold leading-tight text-[var(--ink)]">{value}</p>
+      <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-[var(--muted)]">{hint}</p>
     </div>
   );
 }
@@ -798,15 +798,15 @@ function TrendChart({
 
   if (!series.length) {
     return (
-      <div className="rounded-[1.5rem] border border-dashed border-[var(--line)] bg-white/90 px-5 py-12 text-center text-sm text-[var(--muted)]">
+      <div className="rounded-lg border border-dashed border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-[var(--muted)]">
         {emptyLabel}
       </div>
     );
   }
 
   const width = 760;
-  const height = 280;
-  const padding = { top: 24, right: 24, bottom: 44, left: 64 };
+  const height = 220;
+  const padding = { top: 18, right: 18, bottom: 34, left: 54 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
   const minValue = Math.min(...series.map((item) => item.value));
@@ -819,13 +819,13 @@ function TrendChart({
   const line = series.map((item, index) => `${xForIndex(index)},${yForValue(item.value)}`).join(" ");
 
   return (
-    <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/96 p-4 shadow-[0_14px_34px_rgba(34,34,34,0.06)]">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="rounded-lg border border-[var(--line)] bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-[var(--ink)]">{title}</h3>
-          <p className="text-xs text-[var(--muted)]">{subtitle}</p>
+          <h3 className="text-sm font-semibold text-[var(--ink)]">{title}</h3>
+          <p className="text-[11px] text-[var(--muted)]">{subtitle}</p>
         </div>
-        <div className="rounded-full bg-[var(--accent-soft)] px-3 py-1 text-xs text-[var(--accent-deep)]">
+        <div className="rounded-md bg-[var(--accent-soft)] px-2 py-1 text-[11px] text-[var(--accent-deep)]">
           {series.length} {daysLabel}
         </div>
       </div>
@@ -1205,28 +1205,28 @@ export function MarketDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--page)] px-3 py-4 sm:px-5 lg:px-6">
-      <div className="mx-auto max-w-6xl space-y-4">
-        <section className="overflow-hidden rounded-[2rem] border border-[var(--line)] bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(255,243,244,0.94))] px-5 py-5 shadow-[0_20px_50px_rgba(34,34,34,0.08)] sm:px-6">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)] xl:items-end">
+    <main className="min-h-screen bg-[var(--page)] px-2 py-2 sm:px-3 lg:px-4">
+      <div className="mx-auto max-w-7xl space-y-3">
+        <section className="overflow-hidden rounded-xl border border-[var(--line)] bg-white/96 px-4 py-3 shadow-sm sm:px-5">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)] xl:items-end">
             <div className="max-w-3xl">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--accent-deep)]">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--accent-deep)]">
                 {t.browserKicker}
               </p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ink)] sm:text-[2.5rem]">
+              <h1 className="mt-1 text-xl font-semibold leading-tight tracking-tight text-[var(--ink)] sm:text-2xl">
                 {t.title}
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">{t.subtitle}</p>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--muted)]">{t.subtitle}</p>
             </div>
-            <div className="space-y-2.5 xl:min-w-[340px]">
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/96 px-4 py-3 shadow-[0_12px_30px_rgba(34,34,34,0.06)]">
+            <div className="space-y-2 xl:min-w-[340px]">
+              <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--accent-deep)]">{t.languageLabel}</span>
-                  <span className="text-xs text-[var(--muted)]">
+                  <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{t.languageLabel}</span>
+                  <span className="text-[11px] text-[var(--muted)]">
                     {mounted && localePreference === "auto" ? `${t.auto}: ${systemLocale === "zh" ? t.chinese : t.english}` : null}
                   </span>
                 </div>
-                <div className="mt-2.5 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {([
                     ["auto", t.auto],
                     ["zh", t.chinese],
@@ -1236,9 +1236,9 @@ export function MarketDashboard() {
                       key={value}
                       type="button"
                       onClick={() => updateLocalePreference(value)}
-                      className={`rounded-full px-3 py-1.5 text-sm transition ${
+                      className={`rounded-md px-2.5 py-1 text-xs transition ${
                         localePreference === value
-                          ? "bg-[var(--accent)] text-white shadow-[0_10px_22px_rgba(255,56,92,0.22)]"
+                          ? "bg-[var(--accent)] text-white shadow-sm"
                           : "bg-[#fff6f4] text-[#5e4b4b] hover:bg-[#ffe8e6]"
                       }`}
                     >
@@ -1247,7 +1247,7 @@ export function MarketDashboard() {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 {activeMode === "monthly" ? (
                   <>
                     <SummaryCard
@@ -1280,18 +1280,18 @@ export function MarketDashboard() {
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
-          <div className="mb-4">
-            <h2 className="text-xl font-semibold text-[var(--ink)]">{t.formTitle}</h2>
-            <p className="mt-1.5 text-sm text-[var(--muted)]">
+        <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <h2 className="text-base font-semibold text-[var(--ink)]">{t.formTitle}</h2>
+            <p className="text-xs text-[var(--muted)]">
               {t.formDesc}
             </p>
           </div>
 
-          <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <form onSubmit={onSubmit} className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
             <div className="md:col-span-2 xl:col-span-4">
               <span className="text-xs font-medium text-[var(--muted)]">{t.pricingMode}</span>
-              <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+              <div className="mt-1 grid gap-2 sm:grid-cols-2">
                 {([
                   ["monthly", t.monthlyMode, t.monthlyModeHint],
                   ["daily", t.dailyMode, t.dailyModeHint],
@@ -1306,58 +1306,58 @@ export function MarketDashboard() {
                       setProgress(null);
                       setResult(null);
                     }}
-                    className={`min-h-[78px] rounded-[1.1rem] border px-4 py-3 text-left transition ${
+                    className={`min-h-[58px] rounded-lg border px-3 py-2 text-left transition ${
                       form.pricingMode === value
-                        ? "border-[var(--accent)] bg-[var(--accent-soft)] shadow-[0_12px_26px_rgba(255,56,92,0.12)]"
+                        ? "border-[var(--accent)] bg-[var(--accent-soft)] shadow-sm"
                         : "border-[var(--line)] bg-[#fffdfc] hover:bg-[#fff6f4]"
                     }`}
                   >
                     <span className="block text-sm font-semibold text-[var(--ink)]">{label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{hint}</span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-[var(--muted)]">{hint}</span>
                   </button>
                 ))}
               </div>
             </div>
-            <label className="space-y-1.5">
+            <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">
                 {form.pricingMode === "monthly" ? t.monthlyStartDate : t.startDate}
               </span>
               <input
                 type="date"
-                className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                 value={form.startDate}
                 onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))}
               />
             </label>
-            <label className="space-y-1.5">
+            <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">
                 {form.pricingMode === "monthly" ? t.monthlyEndDate : t.endDate}
               </span>
               <input
                 type="date"
-                className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                 value={form.endDate}
                 onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))}
               />
             </label>
             {form.pricingMode === "monthly" ? (
-              <label className="space-y-1.5">
+              <label className="space-y-1">
                 <span className="text-xs font-medium text-[var(--muted)]">{t.minStayNights}</span>
                 <input
                   type="number"
                   min="28"
                   step="1"
-                  className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                  className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                   value={form.monthlyStayLength}
                   onChange={(event) => setForm((current) => ({ ...current, monthlyStayLength: event.target.value }))}
                 />
               </label>
             ) : null}
-            <label className={`space-y-1.5 ${form.pricingMode === "monthly" ? "md:col-span-1 xl:col-span-2" : "md:col-span-2"}`}>
+            <label className={`space-y-1 ${form.pricingMode === "monthly" ? "md:col-span-1 xl:col-span-2" : "md:col-span-2"}`}>
               <span className="text-xs font-medium text-[var(--muted)]">{t.address}</span>
               <div className="relative">
                 <input
-                  className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                  className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                   placeholder={t.addressPlaceholder}
                   value={form.address}
                   onFocus={() => setAddressFocused(true)}
@@ -1377,9 +1377,9 @@ export function MarketDashboard() {
                   }}
                 />
                 {addressFocused && (addressSuggestions.length > 0 || addressLoading) ? (
-                  <div className="absolute left-0 right-0 top-[calc(100%+0.45rem)] z-20 overflow-hidden rounded-[1.1rem] border border-[var(--line)] bg-white shadow-[0_20px_50px_rgba(34,34,34,0.12)]">
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-20 overflow-hidden rounded-lg border border-[var(--line)] bg-white shadow-lg">
                     {addressLoading ? (
-                      <div className="px-4 py-3 text-sm text-[var(--muted)]">{t.addressSuggesting}</div>
+                      <div className="px-3 py-2 text-sm text-[var(--muted)]">{t.addressSuggesting}</div>
                     ) : null}
                     {addressSuggestions.map((suggestion) => (
                       <button
@@ -1389,7 +1389,7 @@ export function MarketDashboard() {
                           event.preventDefault();
                           selectAddressSuggestion(suggestion);
                         }}
-                        className="flex w-full items-start justify-between gap-3 border-t border-[#f6ece8] px-4 py-3 text-left first:border-t-0 hover:bg-[#fff6f4]"
+                        className="flex w-full items-start justify-between gap-3 border-t border-[#f6ece8] px-3 py-2 text-left first:border-t-0 hover:bg-[#fff6f4]"
                       >
                         <div>
                           <div className="text-sm font-medium text-[var(--ink)]">{suggestion.mainText || suggestion.text}</div>
@@ -1399,13 +1399,13 @@ export function MarketDashboard() {
                         </div>
                       </button>
                     ))}
-                    <div className="border-t border-[#f6ece8] bg-[#fffaf9] px-4 py-2 text-[11px] text-[var(--muted)]">
+                    <div className="border-t border-[#f6ece8] bg-[#fffaf9] px-3 py-1.5 text-[11px] text-[var(--muted)]">
                       {t.poweredByGoogle}
                     </div>
                   </div>
                 ) : null}
               </div>
-              <div className="flex min-h-5 items-center gap-2 text-xs text-[var(--muted)]">
+              <div className="flex min-h-4 items-center gap-2 text-[11px] text-[var(--muted)]">
                 {addressVerified ? (
                   <span className="text-[var(--accent-deep)]">{t.addressVerified}</span>
                 ) : addressLoading ? (
@@ -1417,13 +1417,13 @@ export function MarketDashboard() {
                 )}
               </div>
               {!addressVerified && addressAutocompleteStatus === "ready" && addressSuggestions.length > 0 ? (
-                <div className="text-xs text-[var(--accent-deep)]">{t.addressSelectPrompt}</div>
+                <div className="text-[11px] text-[var(--accent-deep)]">{t.addressSelectPrompt}</div>
               ) : null}
             </label>
-            <label className="space-y-1.5">
+            <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">{t.propertyType}</span>
               <select
-                className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                 value={form.propertyType}
                 onChange={(event) => setForm((current) => ({ ...current, propertyType: event.target.value }))}
               >
@@ -1434,10 +1434,10 @@ export function MarketDashboard() {
                 <option value="套房">{t.suite}</option>
               </select>
             </label>
-            <label className="space-y-1.5">
+            <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">{t.roomType}</span>
               <select
-                className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                 value={form.roomType}
                 onChange={(event) => setForm((current) => ({ ...current, roomType: event.target.value }))}
               >
@@ -1447,33 +1447,33 @@ export function MarketDashboard() {
                 <option value="酒店房间">{t.hotelRoom}</option>
               </select>
             </label>
-            <label className="space-y-1.5">
+            <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">{t.bedrooms}</span>
               <input
                 type="number"
                 min="0"
                 step="1"
-                className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                 value={form.bedrooms}
                 onChange={(event) => setForm((current) => ({ ...current, bedrooms: event.target.value }))}
               />
             </label>
-            <label className="space-y-1.5">
+            <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">{t.bathrooms}</span>
               <input
                 type="number"
                 min="0"
                 step="0.5"
-                className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
                 value={form.bathrooms}
                 onChange={(event) => setForm((current) => ({ ...current, bathrooms: event.target.value }))}
               />
             </label>
             <div className="md:col-span-2 xl:col-span-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
                 <button
                   disabled={loading}
-                  className="rounded-[1.1rem] bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(255,56,92,0.28)] transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
+                  className="rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
                 >
                   {loading
                     ? form.pricingMode === "monthly"
@@ -1484,14 +1484,14 @@ export function MarketDashboard() {
                       : t.dailySubmit}
                 </button>
                 {hasLookupStarted ? (
-                  <div className="min-w-0 flex-1 rounded-[1.1rem] border border-[var(--line)] bg-[#fffaf9] px-4 py-3">
+                  <div className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[#fffaf9] px-3 py-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-medium text-[var(--muted)]">{t.progressTitle}</span>
+                      <span className="text-[11px] font-medium text-[var(--muted)]">{t.progressTitle}</span>
                       <span className={`text-xs ${loading ? "text-[var(--accent-deep)]" : "text-[var(--muted)]"}`}>
                         {loading ? t.progressActive : t.progressDone}
                       </span>
                     </div>
-                    <div className="mt-2 relative h-2.5 overflow-hidden rounded-full bg-[#f6d7dd]">
+                    <div className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-[#f6d7dd]">
                       {loading ? (
                         progress && progress.totalDays > 0 ? (
                           <div
@@ -1513,7 +1513,7 @@ export function MarketDashboard() {
                         <div className="h-full w-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-deep))]" />
                       )}
                     </div>
-                    <div className="mt-2 text-xs text-[var(--muted)]">
+                    <div className="mt-1.5 text-[11px] text-[var(--muted)]">
                       {loading
                         ? progress && progress.totalDays > 0
                           ? locale === "zh"
@@ -1529,10 +1529,10 @@ export function MarketDashboard() {
           </form>
 
           {error ? (
-            <div className="mt-3 rounded-[1.1rem] border border-rose-200 bg-[var(--accent-soft)] px-4 py-3 text-sm text-rose-700">
+            <div className="mt-2 rounded-lg border border-rose-200 bg-[var(--accent-soft)] px-3 py-2 text-sm text-rose-700">
               <div>{t.errorPrefix}: {error}</div>
               {diagnosticUrls.length ? (
-                <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
                   <span className="text-rose-900/80">
                     {locale === "zh" ? "诊断文件:" : "Diagnostics:"}
                   </span>
@@ -1555,7 +1555,7 @@ export function MarketDashboard() {
 
         {result ? (
           <>
-            <section className="grid gap-4">
+            <section className="grid gap-3">
               {activeMode === "monthly" ? (
                 <TrendChart title={t.monthlyTrend} subtitle={t.chartSubtitle} daysLabel={t.daysCount} emptyLabel={t.noChartData} color="#b32572" rows={result.report.rows} type="monthly" />
               ) : (
@@ -1581,29 +1581,29 @@ export function MarketDashboard() {
               )}
             </section>
 
-            <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
-              <h2 className="text-xl font-semibold text-[var(--ink)]">{t.recommendations}</h2>
-              <div className="mt-4 grid gap-2.5">
+            <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+              <h2 className="text-base font-semibold text-[var(--ink)]">{t.recommendations}</h2>
+              <div className="mt-2 grid gap-2">
                 {result.report.recommendations.map((item, index) => (
-                  <div key={`${index}-${item}`} className="rounded-[1.1rem] border border-[#ffd7dc] bg-[#fff7f7] px-4 py-3 text-sm leading-6 text-[#4f3f3f]">
+                  <div key={`${index}-${item}`} className="rounded-lg border border-[#ffd7dc] bg-[#fff7f7] px-3 py-2 text-sm leading-5 text-[#4f3f3f]">
                     {translateRecommendation(item, locale)}
                   </div>
                 ))}
               </div>
             </section>
 
-            <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
-              <div className="flex flex-col gap-1.5">
-                <h2 className="text-xl font-semibold text-[var(--ink)]">{t.similarListings}</h2>
-                <p className="text-sm text-[var(--muted)]">{t.similarListingsDesc}</p>
+            <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <h2 className="text-base font-semibold text-[var(--ink)]">{t.similarListings}</h2>
+                <p className="text-xs text-[var(--muted)]">{t.similarListingsDesc}</p>
               </div>
 
               {suggestedListings.length ? (
-                <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-3 grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
                   {suggestedListings.map((listing) => (
                     <article
                       key={listing.href}
-                      className="rounded-[1.25rem] border border-[var(--line)] bg-[#fffaf9] p-4 shadow-[0_12px_30px_rgba(34,34,34,0.05)]"
+                      className="rounded-lg border border-[var(--line)] bg-[#fffaf9] p-3 shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1612,30 +1612,30 @@ export function MarketDashboard() {
                           </div>
                           <div className="mt-1 text-xs text-[var(--muted)] break-all">{listing.href}</div>
                         </div>
-                        <div className="shrink-0 rounded-full bg-[var(--accent-soft)] px-3 py-1 text-sm font-semibold text-[var(--accent-deep)]">
+                        <div className="shrink-0 rounded-md bg-[var(--accent-soft)] px-2.5 py-1 text-sm font-semibold text-[var(--accent-deep)]">
                           {formatMoney(listing.price)}
                         </div>
                       </div>
 
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--muted)]">
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-[var(--muted)]">
                         {listing.bedrooms != null ? (
-                          <span className="rounded-full bg-white px-2.5 py-1 border border-[var(--line)]">
+                          <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
                             {listing.bedrooms} {t.similarBedrooms}
                           </span>
                         ) : null}
                         {listing.bathrooms != null ? (
-                          <span className="rounded-full bg-white px-2.5 py-1 border border-[var(--line)]">
+                          <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
                             {listing.bathrooms} {t.similarBathrooms}
                           </span>
                         ) : null}
                         {listing.roomType ? (
-                          <span className="rounded-full bg-white px-2.5 py-1 border border-[var(--line)]">
+                          <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
                             {translateRoomType(listing.roomType, locale)}
                           </span>
                         ) : null}
                       </div>
 
-                      <div className="mt-3 text-xs text-[var(--muted)]">
+                      <div className="mt-2 text-xs text-[var(--muted)]">
                         {t.similarSeenIn}:{" "}
                         {[
                           listing.seenInDaily ? t.similarDaily : null,
@@ -1651,12 +1651,12 @@ export function MarketDashboard() {
                         {t.similarAddressMatch}: {listing.addressMatched ? t.similarAddressMatched : t.similarAddressApprox}
                       </div>
 
-                      <div className="mt-4">
+                      <div className="mt-3">
                         <a
                           href={listing.href}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex rounded-full bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(255,56,92,0.22)] transition hover:brightness-105"
+                          className="inline-flex rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-105"
                         >
                           {t.similarOpen}
                         </a>
@@ -1665,19 +1665,19 @@ export function MarketDashboard() {
                   ))}
                 </div>
               ) : (
-                <div className="mt-4 rounded-[1.1rem] border border-dashed border-[var(--line)] bg-white/70 px-4 py-6 text-sm text-[var(--muted)]">
+                <div className="mt-3 rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-3 py-4 text-sm text-[var(--muted)]">
                   {t.similarListingsNone}
                 </div>
               )}
             </section>
 
-            <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-[var(--ink)]">
+                  <h2 className="text-base font-semibold text-[var(--ink)]">
                     {activeMode === "monthly" ? t.monthlyPlan : t.dailyPlan}
                   </h2>
-                  <p className="mt-1.5 text-sm text-[var(--muted)]">
+                  <p className="mt-1 text-xs text-[var(--muted)]">
                     {result.report.input.address} · {translatePropertyType(result.report.input.propertyType?.display || t.noPropertyLimit, locale)} · {translateRoomType(result.report.input.roomType.display, locale)}
                   </p>
                 </div>
@@ -1715,34 +1715,34 @@ export function MarketDashboard() {
                 </div>
               </div>
 
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full border-separate border-spacing-0 text-sm">
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-0 text-[13px]">
                   <thead>
                     {activeMode === "monthly" ? (
                       <tr className="text-left text-[var(--muted)]">
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.date}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.checkoutDate}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMin}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketP25}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMedian}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedDailyPrice}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedMonthlyPrice}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.samples}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.confidence}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.note}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.date}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.checkoutDate}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.marketMin}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.marketP25}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.marketMedian}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.suggestedDailyPrice}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.suggestedMonthlyPrice}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.samples}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.confidence}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.note}</th>
                       </tr>
                     ) : (
                       <tr className="text-left text-[var(--muted)]">
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.date}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMin}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketP25}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMedian}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedListPrice}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedMinimumPrice}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.samples}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.competition}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.confidence}</th>
-                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.note}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.date}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.marketMin}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.marketP25}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.marketMedian}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.suggestedListPrice}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.suggestedMinimumPrice}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.samples}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.competition}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.confidence}</th>
+                        <th className="border-b border-[var(--line)] px-2.5 py-2">{t.note}</th>
                       </tr>
                     )}
                   </thead>
@@ -1750,30 +1750,30 @@ export function MarketDashboard() {
                     {activeMode === "monthly"
                       ? (result.report.monthlyPricingPlan || []).map((row) => (
                           <tr key={`${row.date}-${row.checkoutDate}`}>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-medium text-[var(--ink)]">{row.date}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.checkoutDate}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMin)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketP25)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMedian)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedDailyPrice)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedMonthlyPrice)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.comparableCount}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateConfidence(row.confidence, locale)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translatePlanNote(row.note, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-medium text-[var(--ink)]">{row.date}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{row.checkoutDate}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.marketMin)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.marketP25)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.marketMedian)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedDailyPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedMonthlyPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{row.comparableCount}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translateConfidence(row.confidence, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translatePlanNote(row.note, locale)}</td>
                           </tr>
                         ))
                       : result.report.dailyPricingPlan.map((row) => (
                           <tr key={row.date}>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-medium text-[var(--ink)]">{row.date}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMin)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketP25)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMedian)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedListPrice)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.suggestedMinimumPrice)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.comparableCount}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateCompetitionLevel(row.competitionLevel, locale)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateConfidence(row.confidence, locale)}</td>
-                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translatePlanNote(row.note, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-medium text-[var(--ink)]">{row.date}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.marketMin)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.marketP25)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.marketMedian)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedListPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.suggestedMinimumPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{row.comparableCount}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translateCompetitionLevel(row.competitionLevel, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translateConfidence(row.confidence, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translatePlanNote(row.note, locale)}</td>
                           </tr>
                         ))}
                   </tbody>
@@ -1781,25 +1781,25 @@ export function MarketDashboard() {
               </div>
             </section>
 
-            <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
-              <h2 className="text-xl font-semibold text-[var(--ink)]">{t.dailyDetails}</h2>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full border-separate border-spacing-0 text-sm">
+            <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+              <h2 className="text-base font-semibold text-[var(--ink)]">{t.dailyDetails}</h2>
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-0 text-[13px]">
                   <thead>
                     <tr className="text-left text-[var(--muted)]">
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.date}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.dailyRentMedian}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.monthlyRentMedian}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.matchingStrategy}</th>
+                      <th className="border-b border-[var(--line)] px-2.5 py-2">{t.date}</th>
+                      <th className="border-b border-[var(--line)] px-2.5 py-2">{t.dailyRentMedian}</th>
+                      <th className="border-b border-[var(--line)] px-2.5 py-2">{t.monthlyRentMedian}</th>
+                      <th className="border-b border-[var(--line)] px-2.5 py-2">{t.matchingStrategy}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {result.report.rows.map((row) => (
                       <tr key={row.date}>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-medium text-[var(--ink)]">{row.date}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.daily?.priceStats?.median)}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.monthly?.priceStats?.median)}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">
+                        <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-medium text-[var(--ink)]">{row.date}</td>
+                        <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.daily?.priceStats?.median)}</td>
+                        <td className="border-b border-[#f2e7e3] px-2.5 py-2">{formatMoney(row.monthly?.priceStats?.median)}</td>
+                        <td className="border-b border-[#f2e7e3] px-2.5 py-2">
                           <div>{translateMatchLabel(row.daily?.matchLabel || "N/A", locale)}</div>
                           <div className="mt-1 text-xs text-[#aa8f8f]">{translateMatchLabel(row.monthly?.matchLabel || "N/A", locale)}</div>
                         </td>
@@ -1810,15 +1810,15 @@ export function MarketDashboard() {
               </div>
             </section>
 
-            <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
-              <h2 className="text-xl font-semibold text-[var(--ink)]">{t.runLogs}</h2>
-              <pre className="mt-4 overflow-x-auto rounded-[1.25rem] bg-[#2d1f22] p-4 text-xs leading-5 text-[#fff4f4]">
+            <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+              <h2 className="text-base font-semibold text-[var(--ink)]">{t.runLogs}</h2>
+              <pre className="mt-3 max-h-64 overflow-x-auto overflow-y-auto rounded-lg bg-[#2d1f22] p-3 text-xs leading-5 text-[#fff4f4]">
                 {result.stdout || result.stderr || t.noLogs}
               </pre>
             </section>
           </>
         ) : (
-          <section className="rounded-[2rem] border border-dashed border-[var(--line)] bg-white/78 px-6 py-12 text-center text-sm text-[var(--muted)] shadow-[0_16px_40px_rgba(34,34,34,0.05)]">
+          <section className="rounded-xl border border-dashed border-[var(--line)] bg-white/78 px-4 py-8 text-center text-sm text-[var(--muted)] shadow-sm">
             {t.emptyState}
           </section>
         )}

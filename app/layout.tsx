@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "附近Airbnb日租和月租查价格",
+  title: "Airbnb 月租和短租定价建议",
   description: "独立的 Airbnb 房价查价和定价建议平台。",
 };
 

@@ -2,8 +2,10 @@
 .env.local
 .env
 .next
+.playwright-cli
 node_modules
 npm-debug.log*
 server/automation/state/auth/*.json
+server/output/jobs/*
 server/output/reports/*
 !server/output/reports/.gitkeep
