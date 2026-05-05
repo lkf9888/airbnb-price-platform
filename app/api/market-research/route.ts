@@ -40,6 +40,7 @@ function consumeRateLimit(ip: string) {
 }
 
 const requestSchema = z.object({
+  pricingMode: z.enum(["daily", "monthly"]).default("daily"),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   address: z.string().min(5),
@@ -47,6 +48,7 @@ const requestSchema = z.object({
   roomType: z.string().min(1),
   bedrooms: z.coerce.number().min(0).max(20),
   bathrooms: z.coerce.number().min(0).max(20),
+  monthlyStayLength: z.coerce.number().int().min(28).max(90).default(30),
   locale: z.enum(["zh", "en"]).optional(),
   centerLat: z.number().min(-90).max(90).optional(),
   centerLng: z.number().min(-180).max(180).optional(),
@@ -166,11 +168,40 @@ export async function POST(request: Request) {
   }
 
   const input = parsed.data;
+
+  const startMs = Date.parse(input.startDate);
+  const endMs = Date.parse(input.endDate);
+  const spanNights = Number.isFinite(startMs) && Number.isFinite(endMs)
+    ? Math.round((endMs - startMs) / (24 * 3600 * 1000))
+    : NaN;
+
+  if (!Number.isFinite(spanNights) || spanNights < 0) {
+    return NextResponse.json(
+      { error: message(locale, "结束日期必须晚于或等于开始日期。", "End date must be on or after start date.") },
+      { status: 400 },
+    );
+  }
+
+  if (input.pricingMode === "monthly" && spanNights < input.monthlyStayLength) {
+    return NextResponse.json(
+      {
+        error: message(
+          locale,
+          `月租模式至少需要 ${input.monthlyStayLength} 晚的日期范围。`,
+          `Monthly mode needs at least ${input.monthlyStayLength} nights between start and end date.`,
+        ),
+      },
+      { status: 400 },
+    );
+  }
+
   await ensureAirbnbStorageState();
 
   const args = [
     scriptPath(),
     "--headless",
+    "--mode",
+    input.pricingMode,
     "--start-date",
     input.startDate,
     "--end-date",
@@ -183,6 +214,8 @@ export async function POST(request: Request) {
     String(input.bedrooms),
     "--bathrooms",
     String(input.bathrooms),
+    "--monthly-nights",
+    String(input.monthlyStayLength),
   ];
 
   if (input.propertyType && input.propertyType.trim()) {
@@ -200,11 +233,9 @@ export async function POST(request: Request) {
   const jobId = randomUUID();
   const startedAt = new Date().toISOString();
 
-  const startMs = Date.parse(input.startDate);
-  const endMs = Date.parse(input.endDate);
-  const totalDays = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
-    ? Math.round((endMs - startMs) / (24 * 3600 * 1000)) + 1
-    : 0;
+  const totalDays = input.pricingMode === "monthly"
+    ? Math.max(0, spanNights - input.monthlyStayLength + 1)
+    : spanNights + 1;
 
   let completedDays = 0;
   let currentDate: string | null = null;

@@ -134,6 +134,7 @@ function parseArgs(argv) {
     setup: false,
     headed: false,
     headless: false,
+    pricingMode: 'daily',
     browser: null,
     startDate: null,
     endDate: null,
@@ -177,6 +178,12 @@ function parseArgs(argv) {
 
     if (arg === '--browser') {
       args.browser = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--mode' || arg === '--pricing-mode') {
+      args.pricingMode = argv[index + 1];
       index += 1;
       continue;
     }
@@ -280,6 +287,7 @@ Options:
   --setup                 Open Airbnb and save login state
   --headed                Force headed browser mode
   --headless              Force headless browser mode
+  --mode <name>           daily | monthly
   --browser <name>        chromium | chrome | firefox
   --start-date <date>     YYYY-MM-DD
   --end-date <date>       YYYY-MM-DD
@@ -557,6 +565,7 @@ function resolveRequestedTypes(roomTypeInput, explicitPropertyType) {
 }
 
 async function collectResearchInput(args, config) {
+  const pricingMode = normalizePricingMode(args.pricingMode);
   const startDate = args.startDate || await promptDate('请输入调研开始日期（YYYY-MM-DD）:');
   const endDate = args.endDate || await promptDate('请输入调研结束日期（YYYY-MM-DD）:');
   const address = args.address || await promptText('请输入房源地址或社区地址:');
@@ -576,6 +585,7 @@ async function collectResearchInput(args, config) {
     : null;
 
   return {
+    pricingMode,
     startDate,
     endDate,
     address,
@@ -609,6 +619,13 @@ function validateResearchInput(input) {
   const spanDays = enumerateDates(input.startDate, input.endDate).length;
   if (spanDays > MAX_DATE_SPAN_DAYS) {
     fail(`Date range is too large (${spanDays} days). Keep it within ${MAX_DATE_SPAN_DAYS} days per run.`);
+  }
+
+  if (input.pricingMode === 'monthly') {
+    const availableNights = Math.round((end.getTime() - start.getTime()) / (24 * 3600 * 1000));
+    if (availableNights < input.monthlyStayLength) {
+      fail(`Monthly mode needs at least ${input.monthlyStayLength} nights between start date and end date.`);
+    }
   }
 
   if (!normalizeText(input.address)) {
@@ -1004,9 +1021,12 @@ function parseCard(rawCard, stayType, monthlyStayLength) {
     }
   }
 
-  const monthlyTotal = stayType === 'monthly'
-    ? (selectedPrice ? selectedPrice.amount : null)
+  const monthlyNightlyEquivalent = stayType === 'monthly' && selectedPrice
+    ? selectedPrice.amount / monthlyStayLength
     : null;
+  const normalizedPrice = stayType === 'monthly' && monthlyNightlyEquivalent
+    ? monthlyNightlyEquivalent * 30
+    : (selectedPrice ? selectedPrice.amount : null);
 
   return {
     href: rawCard.href,
@@ -1015,9 +1035,9 @@ function parseCard(rawCard, stayType, monthlyStayLength) {
     propertyType,
     bedrooms: parseBedrooms(text),
     bathrooms: parseBathrooms(text),
-    price: selectedPrice ? selectedPrice.amount : null,
+    price: normalizedPrice,
     priceBasis: selectedBasis,
-    monthlyNightlyEquivalent: monthlyTotal ? monthlyTotal / monthlyStayLength : null,
+    monthlyNightlyEquivalent,
   };
 }
 
@@ -1154,11 +1174,41 @@ function calcSeriesStats(values) {
     max: filtered[filtered.length - 1],
     avg: sum / filtered.length,
     median,
+    p10: percentile(filtered, 10),
+    p20: percentile(filtered, 20),
+    p25: percentile(filtered, 25),
+    p35: percentile(filtered, 35),
+    p75: percentile(filtered, 75),
   };
 }
 
 function roundCurrency(value) {
   return Math.round(value);
+}
+
+function normalizePricingMode(value) {
+  const normalized = String(value || '').toLowerCase().trim();
+  return normalized === 'monthly' ? 'monthly' : 'daily';
+}
+
+function pricingModeLabel(mode) {
+  return mode === 'monthly' ? '月租定价' : '短租每日定价';
+}
+
+function percentile(sortedValues, percentileValue) {
+  if (!sortedValues.length) {
+    return null;
+  }
+
+  if (sortedValues.length === 1) {
+    return sortedValues[0];
+  }
+
+  const index = (percentileValue / 100) * (sortedValues.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const weight = index - lower;
+  return sortedValues[lower] + ((sortedValues[upper] - sortedValues[lower]) * weight);
 }
 
 function summarizeDateResult(date, stayType, comparableCards, matchLabel, wanted) {
@@ -1231,11 +1281,39 @@ function dayOfWeek(dateString) {
 }
 
 function buildRecommendations(rows, input) {
+  const suggestions = [];
+
+  if (input.pricingMode === 'monthly') {
+    const monthlyOverall = buildOverallStats(rows, 'monthly', 'median');
+    const planStats = calcSeriesStats(
+      buildMonthlyPricingPlan(rows, input)
+        .map((row) => row.suggestedMonthlyPrice)
+        .filter((value) => Number.isFinite(value)),
+    );
+    const strongStarts = topDates(rows, 'monthly', 'median', 'desc', 3);
+
+    if (planStats) {
+      suggestions.push(`月租建议价可以先围绕 C$${roundCurrency(planStats.median)} / 30 晚，折合每天 C$${roundCurrency(planStats.median / 30)}。这个价格目标是落在附近同类月租房的低价高性价比区间。`);
+    }
+
+    if (monthlyOverall) {
+      suggestions.push(`附近同类月租房市场中位数约 C$${roundCurrency(monthlyOverall.median)} / 30 晚，建议价应低于中位数但不要盲目低于异常低价。`);
+    }
+
+    if (strongStarts.length) {
+      suggestions.push(`月租竞争价格较高的起租日主要是 ${strongStarts.map((item) => `${item.date} (C$${roundCurrency(item.value)})`).join('、')}，这些日期可以优先开放。`);
+    }
+
+    if (avgComparableCount(rows, 'monthly') < 4) {
+      suggestions.push('当前月租可比样本偏少，建议把搜索半径放大或补看 Airbnb 第二页，避免被个别异常房源带偏。');
+    }
+
+    return suggestions;
+  }
+
   const dailyOverall = buildOverallStats(rows, 'daily', 'median');
-  const monthlyOverall = buildOverallStats(rows, 'monthly', 'median');
   const hotDates = topDates(rows, 'daily', 'median', 'desc');
   const softDates = topDates(rows, 'daily', 'median', 'asc');
-  const monthlyHotDates = topDates(rows, 'monthly', 'median', 'desc', 2);
   const weekendRows = rows.filter((row) => ['Fri', 'Sat'].includes(dayOfWeek(row.date)));
   const weekdayRows = rows.filter((row) => !['Fri', 'Sat'].includes(dayOfWeek(row.date)));
   const weekendMedian = buildOverallStats(weekendRows, 'daily', 'median');
@@ -1243,35 +1321,25 @@ function buildRecommendations(rows, input) {
   const weekendPremium = weekendMedian && weekdayMedian
     ? ((weekendMedian.avg - weekdayMedian.avg) / weekdayMedian.avg) * 100
     : null;
-  const suggestions = [];
 
   if (dailyOverall) {
-    suggestions.push(`日租基准价可以先围绕 C$${roundCurrency(dailyOverall.median)} 设置，属于当前可比房源的中位数水平。`);
+    suggestions.push(`短租每日建议价会优先低于附近同类房源的中位数，整体基准大约是 C$${roundCurrency(dailyOverall.median)} / 晚。`);
   }
 
   if (weekendPremium && weekendPremium > 5) {
-    suggestions.push(`周五到周六的日租中位数比工作日高约 ${weekendPremium.toFixed(0)}%，周末可以考虑加价 5% 到 12%。`);
+    suggestions.push(`周五到周六的日租中位数比工作日高约 ${weekendPremium.toFixed(0)}%，周末可以保留小幅溢价，但仍保持同区域高性价比。`);
   }
 
   if (hotDates.length) {
-    suggestions.push(`高价日期集中在 ${hotDates.map((item) => `${item.date} (C$${roundCurrency(item.value)})`).join('、')}，这些日期更适合采用偏进攻的挂牌价。`);
+    suggestions.push(`高价日期集中在 ${hotDates.map((item) => `${item.date} (C$${roundCurrency(item.value)})`).join('、')}，这些日期不用压到全市场最低。`);
   }
 
   if (softDates.length) {
-    suggestions.push(`低价日期集中在 ${softDates.map((item) => `${item.date} (C$${roundCurrency(item.value)})`).join('、')}，这些日期更适合做折扣或最短入住限制放宽。`);
+    suggestions.push(`低价日期集中在 ${softDates.map((item) => `${item.date} (C$${roundCurrency(item.value)})`).join('、')}，这些日期建议更贴近低位市场价来提高入住率。`);
   }
 
-  if (monthlyOverall) {
-    suggestions.push(`月租的市场中位数大约在 C$${roundCurrency(monthlyOverall.median)} / ${input.monthlyStayLength} 晚，可以把月租打包价先定在这个区间附近，再按装修和位置微调。`);
-  }
-
-  if (monthlyHotDates.length) {
-    suggestions.push(`月租强势起租日主要出现在 ${monthlyHotDates.map((item) => item.date).join('、')}，如果你支持长住，这些起租日值得优先开放。`);
-  }
-
-  const averageDailySamples = avgComparableCount(rows, 'daily');
-  if (averageDailySamples < 4) {
-    suggestions.push('当前每个日期抓到的可比样本偏少，建议在报告基础上再人工补看 1 到 2 页搜索结果，避免被个别异常价格带偏。');
+  if (avgComparableCount(rows, 'daily') < 4) {
+    suggestions.push('当前短租可比样本偏少，建议放宽物业类型或扩大搜索半径后再复查一次。');
   }
 
   return suggestions;
@@ -1281,50 +1349,57 @@ function roundToNearestFive(value) {
   return Math.round(value / 5) * 5;
 }
 
-function buildDailyPricingPlan(rows, input) {
-  const dailyBaseline = buildOverallStats(rows, 'daily', 'median');
-  if (!dailyBaseline) {
-    return [];
-  }
+function clampPrice(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
 
+function buildDailyPricingPlan(rows, input) {
   return rows.map((row) => {
     const section = row.daily;
     const marketMedian = section && section.priceStats ? section.priceStats.median : null;
     const marketAvg = section && section.priceStats ? section.priceStats.avg : null;
+    const stats = section && section.priceStats ? section.priceStats : null;
 
     if (!Number.isFinite(marketMedian)) {
       return {
         date: row.date,
+        pricingMode: 'daily',
+        marketMin: null,
+        marketP10: null,
+        marketP20: null,
+        marketP25: null,
         marketMedian: null,
         marketAvg: null,
         suggestedListPrice: null,
         suggestedMinimumPrice: null,
         comparableCount: section ? section.comparableCount : 0,
+        competitionLevel: '未知',
         confidence: '低',
         note: '没有足够的日租样本',
       };
     }
 
-    const ratio = marketMedian / dailyBaseline.median;
-    let premium = 0.01;
-    let note = '建议贴近市场中位数挂牌';
+    const p10 = Number.isFinite(stats.p10) ? stats.p10 : marketMedian * 0.9;
+    const p20 = Number.isFinite(stats.p20) ? stats.p20 : marketMedian * 0.93;
+    const p25 = Number.isFinite(stats.p25) ? stats.p25 : marketMedian * 0.95;
+    const p35 = Number.isFinite(stats.p35) ? stats.p35 : marketMedian * 0.98;
+    let suggestedRaw = p25 * 0.97;
+    let competitionLevel = '正常';
+    let note = '建议略低于低位市场价，保持同区域高性价比';
 
-    if (ratio >= 1.08) {
-      premium = 0.05;
-      note = '高需求日期，建议积极挂牌';
-    } else if (ratio >= 1.03) {
-      premium = 0.03;
-      note = '需求偏强，可小幅上调';
-    } else if (ratio <= 0.92) {
-      premium = -0.02;
-      note = '偏弱日期，建议保守定价';
-    } else if (ratio <= 0.97) {
-      premium = 0;
-      note = '略弱于均值，建议平价吸单';
+    if (section.comparableCount >= 15) {
+      competitionLevel = '强';
+      suggestedRaw = Math.min(p20, p25 * 0.95);
+      note = '竞争强，建议靠近 P20 低位价格来提高转化';
+    } else if (section.comparableCount < 8) {
+      competitionLevel = '弱';
+      suggestedRaw = Math.min(marketMedian * 0.95, p35);
+      note = '供应较少，可以略高于低位价但仍低于市场中位数';
     }
 
-    const suggestedListPrice = roundToNearestFive(marketMedian * (1 + premium));
-    const suggestedMinimumPrice = roundToNearestFive(Math.max(suggestedListPrice * 0.9, marketMedian * 0.88));
+    suggestedRaw = clampPrice(suggestedRaw, p10 * 0.95, marketMedian * 0.98);
+    const suggestedListPrice = roundToNearestFive(suggestedRaw);
+    const suggestedMinimumPrice = roundToNearestFive(Math.max(suggestedListPrice * 0.9, p10 * 0.9));
     let confidence = '中';
 
     if (section.comparableCount >= 8 && /物业类型/.test(section.matchLabel)) {
@@ -1335,10 +1410,78 @@ function buildDailyPricingPlan(rows, input) {
 
     return {
       date: row.date,
+      pricingMode: 'daily',
+      marketMin: stats.min,
+      marketP10: p10,
+      marketP20: p20,
+      marketP25: p25,
       marketMedian,
       marketAvg,
       suggestedListPrice,
       suggestedMinimumPrice,
+      comparableCount: section.comparableCount,
+      competitionLevel,
+      confidence,
+      note,
+    };
+  });
+}
+
+function buildMonthlyPricingPlan(rows, input) {
+  return rows.map((row) => {
+    const section = row.monthly;
+    const stats = section && section.priceStats ? section.priceStats : null;
+    const marketMedian = stats ? stats.median : null;
+
+    if (!Number.isFinite(marketMedian)) {
+      return {
+        date: row.date,
+        checkoutDate: formatIsoDate(addDays(parseIsoDate(row.date), input.monthlyStayLength)),
+        pricingMode: 'monthly',
+        marketMin: null,
+        marketP10: null,
+        marketP25: null,
+        marketMedian: null,
+        suggestedDailyPrice: null,
+        suggestedMonthlyPrice: null,
+        suggestedMinimumMonthlyPrice: null,
+        comparableCount: section ? section.comparableCount : 0,
+        confidence: '低',
+        note: '没有足够的月租样本',
+      };
+    }
+
+    const p10 = Number.isFinite(stats.p10) ? stats.p10 : marketMedian * 0.9;
+    const p25 = Number.isFinite(stats.p25) ? stats.p25 : marketMedian * 0.95;
+    let suggestedMonthlyRaw = Math.min(p25 * 0.97, marketMedian * 0.88);
+    suggestedMonthlyRaw = Math.max(suggestedMonthlyRaw, p10 * 0.95);
+    suggestedMonthlyRaw = Math.min(suggestedMonthlyRaw, marketMedian * 0.96);
+
+    const suggestedMonthlyPrice = roundToNearestFive(suggestedMonthlyRaw);
+    const suggestedDailyPrice = roundToNearestFive(suggestedMonthlyPrice / 30);
+    const suggestedMinimumMonthlyPrice = roundToNearestFive(Math.max(suggestedMonthlyPrice * 0.94, p10 * 0.9));
+    const medianDiscountPercent = ((marketMedian - suggestedMonthlyPrice) / marketMedian) * 100;
+    let confidence = '中';
+    let note = `建议比市场中位数低约 ${Math.max(0, medianDiscountPercent).toFixed(0)}%，目标是低价高性价比`;
+
+    if (section.comparableCount >= 8 && /物业类型/.test(section.matchLabel)) {
+      confidence = '高';
+    } else if (section.comparableCount < 5 || /使用当前页全部/.test(section.matchLabel)) {
+      confidence = '低';
+      note = '月租样本偏少，建议价需要人工复核后再发布';
+    }
+
+    return {
+      date: row.date,
+      checkoutDate: formatIsoDate(addDays(parseIsoDate(row.date), input.monthlyStayLength)),
+      pricingMode: 'monthly',
+      marketMin: stats.min,
+      marketP10: p10,
+      marketP25: p25,
+      marketMedian,
+      suggestedDailyPrice,
+      suggestedMonthlyPrice,
+      suggestedMinimumMonthlyPrice,
       comparableCount: section.comparableCount,
       confidence,
       note,
@@ -1457,6 +1600,8 @@ function renderPricingPlanRows(rows) {
   return rows.map((row) => `
     <tr>
       <td>${escapeHtml(row.date)}</td>
+      <td>${escapeHtml(formatMoney(row.marketMin))}</td>
+      <td>${escapeHtml(formatMoney(row.marketP25))}</td>
       <td>${escapeHtml(formatMoney(row.marketMedian))}</td>
       <td>${escapeHtml(formatMoney(row.suggestedListPrice))}</td>
       <td>${escapeHtml(formatMoney(row.suggestedMinimumPrice))}</td>
@@ -1467,9 +1612,27 @@ function renderPricingPlanRows(rows) {
   `).join('');
 }
 
+function renderMonthlyPricingPlanRows(rows) {
+  return rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.date)}</td>
+      <td>${escapeHtml(row.checkoutDate)}</td>
+      <td>${escapeHtml(formatMoney(row.marketMin))}</td>
+      <td>${escapeHtml(formatMoney(row.marketP25))}</td>
+      <td>${escapeHtml(formatMoney(row.marketMedian))}</td>
+      <td>${escapeHtml(formatMoney(row.suggestedDailyPrice))}</td>
+      <td>${escapeHtml(formatMoney(row.suggestedMonthlyPrice))}</td>
+      <td>${escapeHtml(String(row.comparableCount))}</td>
+      <td>${escapeHtml(row.confidence)}</td>
+      <td>${escapeHtml(row.note)}</td>
+    </tr>
+  `).join('');
+}
+
 function buildHtmlReport(report) {
   const dailyOverall = buildOverallStats(report.rows, 'daily', 'median');
   const monthlyOverall = buildOverallStats(report.rows, 'monthly', 'median');
+  const isMonthlyMode = report.pricingMode === 'monthly';
   const generatedAt = new Date().toLocaleString('zh-CN', { timeZone: report.config.timezone });
 
   return `<!doctype html>
@@ -1628,6 +1791,7 @@ function buildHtmlReport(report) {
       <p class="subtle">生成时间：${escapeHtml(generatedAt)}</p>
       <div class="input-grid">
         <div><div class="label">调研日期范围</div><div class="value">${escapeHtml(report.input.startDate)} 到 ${escapeHtml(report.input.endDate)}</div></div>
+        <div><div class="label">定价模式</div><div class="value">${escapeHtml(report.pricingModeLabel || pricingModeLabel(report.input.pricingMode))}</div></div>
         <div><div class="label">房源地址</div><div class="value">${escapeHtml(report.input.address)}</div></div>
         <div><div class="label">物业类型 / 房型</div><div class="value">${escapeHtml(report.input.propertyType ? `${report.input.propertyType.display} / ${report.input.roomType.display}` : report.input.roomType.display)}</div></div>
         <div><div class="label">卧室 / 卫生间</div><div class="value">${escapeHtml(String(report.input.bedrooms))} / ${escapeHtml(String(report.input.bathrooms))}</div></div>
@@ -1656,8 +1820,9 @@ function buildHtmlReport(report) {
 
     <section class="panel">
       <h2>价格图</h2>
-      ${renderChartSvg(report.rows, 'daily', '日租日期均价图', '#2563eb')}
-      ${renderChartSvg(report.rows, 'monthly', '月租日期均价图', '#059669')}
+      ${isMonthlyMode
+        ? renderChartSvg(report.rows, 'monthly', '月租30晚等效价格图', '#059669')
+        : renderChartSvg(report.rows, 'daily', '短租每日价格图', '#2563eb')}
     </section>
 
     <section class="panel">
@@ -1668,21 +1833,38 @@ function buildHtmlReport(report) {
     </section>
 
     <section class="panel">
-      <h2>每天建议挂牌价表</h2>
+      <h2>${isMonthlyMode ? '月租建议价格表' : '每天建议挂牌价表'}</h2>
       <table>
         <thead>
-          <tr>
-            <th>日期</th>
-            <th>市场中位数</th>
-            <th>建议挂牌价</th>
-            <th>建议底价</th>
-            <th>样本数</th>
-            <th>置信度</th>
-            <th>策略说明</th>
-          </tr>
+          ${isMonthlyMode
+            ? `<tr>
+              <th>起租日</th>
+              <th>退房日</th>
+              <th>市场最低月租</th>
+              <th>P25月租</th>
+              <th>市场中位月租</th>
+              <th>建议日价</th>
+              <th>建议30晚月租</th>
+              <th>样本数</th>
+              <th>置信度</th>
+              <th>策略说明</th>
+            </tr>`
+            : `<tr>
+              <th>日期</th>
+              <th>市场最低</th>
+              <th>P25</th>
+              <th>市场中位数</th>
+              <th>建议挂牌价</th>
+              <th>建议底价</th>
+              <th>样本数</th>
+              <th>置信度</th>
+              <th>策略说明</th>
+            </tr>`}
         </thead>
         <tbody>
-          ${renderPricingPlanRows(report.dailyPricingPlan)}
+          ${isMonthlyMode
+            ? renderMonthlyPricingPlanRows(report.monthlyPricingPlan || [])
+            : renderPricingPlanRows(report.dailyPricingPlan)}
         </tbody>
       </table>
     </section>
@@ -1724,7 +1906,7 @@ function buildHtmlReport(report) {
 
 function buildOutputPaths(input) {
   const timestampLabel = new Date().toISOString().replace(/[:]/g, '-');
-  const slug = slugify(`${input.address}-${input.roomType.display}-${input.bedrooms}bed-${input.bathrooms}bath`);
+  const slug = slugify(`${input.pricingMode}-${input.address}-${input.roomType.display}-${input.bedrooms}bed-${input.bathrooms}bath`);
   const baseName = `${timestampLabel}-${slug}`;
   ensureDir(input.reportDir);
   return {
@@ -1757,14 +1939,23 @@ async function runSingleSearch(page, config, input, date, stayType) {
 }
 
 async function runResearch(page, config, input) {
-  const dates = enumerateDates(input.startDate, input.endDate);
+  const allDates = enumerateDates(input.startDate, input.endDate);
+  const dates = input.pricingMode === 'monthly'
+    ? allDates.filter((date) => addDays(parseIsoDate(date), input.monthlyStayLength).getTime() <= parseIsoDate(input.endDate).getTime())
+    : allDates;
   const rows = [];
 
   for (const date of dates) {
     log(`Researching ${date}`);
-    const daily = await runSingleSearch(page, config, input, date, 'daily');
-    await pause(1200);
-    const monthly = await runSingleSearch(page, config, input, date, 'monthly');
+    const daily = input.pricingMode === 'daily'
+      ? await runSingleSearch(page, config, input, date, 'daily')
+      : null;
+    if (daily) {
+      await pause(1200);
+    }
+    const monthly = input.pricingMode === 'monthly'
+      ? await runSingleSearch(page, config, input, date, 'monthly')
+      : null;
     rows.push({ date, daily, monthly });
     await pause(1200);
   }
@@ -1810,11 +2001,14 @@ async function main() {
     const output = buildOutputPaths(input);
     const report = {
       generatedAt: new Date().toISOString(),
+      pricingMode: input.pricingMode,
+      pricingModeLabel: pricingModeLabel(input.pricingMode),
       config,
       input,
       rows,
       recommendations: buildRecommendations(rows, input),
-      dailyPricingPlan: buildDailyPricingPlan(rows, input),
+      dailyPricingPlan: input.pricingMode === 'daily' ? buildDailyPricingPlan(rows, input) : [],
+      monthlyPricingPlan: input.pricingMode === 'monthly' ? buildMonthlyPricingPlan(rows, input) : [],
       output,
     };
     const html = buildHtmlReport(report);

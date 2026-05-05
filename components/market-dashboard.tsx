@@ -4,9 +4,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Locale = "zh" | "en";
 type LocalePreference = "auto" | Locale;
+type PricingMode = "monthly" | "daily";
+
+type PriceStats = {
+  count?: number;
+  avg: number;
+  median: number;
+  min: number;
+  max: number;
+  p10?: number | null;
+  p20?: number | null;
+  p25?: number | null;
+  p35?: number | null;
+};
+
+type MarketSection = {
+  comparableCount: number;
+  matchLabel: string;
+  sampleListings?: ComparableListing[];
+  priceStats?: PriceStats | null;
+};
 
 type Report = {
+  pricingMode?: PricingMode;
+  pricingModeLabel?: string;
   input: {
+    pricingMode?: PricingMode;
     startDate: string;
     endDate: string;
     address: string;
@@ -14,38 +37,41 @@ type Report = {
     roomType: { display: string };
     bedrooms: number;
     bathrooms: number;
+    monthlyStayLength?: number;
   };
   recommendations: string[];
   rows: Array<{
     date: string;
-    daily?: {
-      comparableCount: number;
-      matchLabel: string;
-      sampleListings?: ComparableListing[];
-      priceStats?: {
-        avg: number;
-        median: number;
-        min: number;
-        max: number;
-      } | null;
-    };
-    monthly?: {
-      comparableCount: number;
-      matchLabel: string;
-      sampleListings?: ComparableListing[];
-      priceStats?: {
-        avg: number;
-        median: number;
-        min: number;
-        max: number;
-      } | null;
-    };
+    daily?: MarketSection | null;
+    monthly?: MarketSection | null;
   }>;
   dailyPricingPlan: Array<{
     date: string;
+    pricingMode?: "daily";
+    marketMin?: number | null;
+    marketP10?: number | null;
+    marketP20?: number | null;
+    marketP25?: number | null;
     marketMedian: number | null;
+    marketAvg?: number | null;
     suggestedListPrice: number | null;
     suggestedMinimumPrice: number | null;
+    comparableCount: number;
+    competitionLevel?: string;
+    confidence: string;
+    note: string;
+  }>;
+  monthlyPricingPlan?: Array<{
+    date: string;
+    checkoutDate: string;
+    pricingMode?: "monthly";
+    marketMin: number | null;
+    marketP10: number | null;
+    marketP25: number | null;
+    marketMedian: number | null;
+    suggestedDailyPrice: number | null;
+    suggestedMonthlyPrice: number | null;
+    suggestedMinimumMonthlyPrice: number | null;
     comparableCount: number;
     confidence: string;
     note: string;
@@ -96,20 +122,28 @@ const STORAGE_KEY = "airbnb-price-platform-locale";
 const copy = {
   zh: {
     browserKicker: "Airbnb Pricing Platform",
-    title: "附近Airbnb日租和月租查价格",
-    subtitle: "输入条件后，一键查看附近 Airbnb 的日租、月租、价格图和建议挂牌价。",
+    title: "Airbnb 月租和短租定价建议",
+    subtitle: "选择月租或短租模式，按附近仍可预订的同类房源生成建议价格。",
     languageLabel: "语言",
     auto: "自动",
     chinese: "中文",
     english: "English",
-    dailyMedian: "日租中位数",
-    monthlyMedian: "月租中位数",
-    dailyMedianHint: "当前查价区间内的日租中位数基准",
-    monthlyMedianHint: "当前查价区间内的月租中位数基准",
+    dailyMedian: "短租市场中位数",
+    monthlyMedian: "月租市场中位数",
+    dailyMedianHint: "当前短租查价区间内的每晚市场中位数",
+    monthlyMedianHint: "当前月租查价区间内的30晚等效市场中位数",
     formTitle: "开始一次新查价",
     formDesc: "输入目标房源条件后，平台会调用本地 Airbnb 查价引擎，并把结果直接可视化。",
+    pricingMode: "定价模式",
+    monthlyMode: "月租定价",
+    dailyMode: "短租每日定价",
+    monthlyModeHint: "查可住满30晚的附近月租房，并输出建议日价和30晚月租。",
+    dailyModeHint: "逐日查询附近一晚可订房源，并输出每天建议挂牌价。",
     startDate: "开始日期",
     endDate: "结束日期",
+    monthlyStartDate: "最早起租日",
+    monthlyEndDate: "最晚退房日",
+    minStayNights: "月租晚数",
     address: "房源地址",
     addressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
     addressHint: "输入时会出现地址建议（Photon / OpenStreetMap），选中后自动回填并定位。",
@@ -126,7 +160,7 @@ const copy = {
     progressDone: "已完成",
     similarListings: "建议的 5 个附近类似房源",
     similarListingsDesc: "基于本次查价抓到的可比样本重新筛选，优先保留与输入地址城市/区域更相关的 Airbnb 房源。",
-    similarListingsNone: "没有找到位于你输入地址附近的可比房源。可尝试选中 Google Maps 建议里更精确的地址，或放宽物业/房型条件后再查一次。",
+    similarListingsNone: "没有找到位于你输入地址附近的可比房源。可尝试选中更精确的地址建议，或放宽物业/房型条件后再查一次。",
     similarOpen: "打开 Airbnb",
     similarSeenIn: "出现于",
     similarDaily: "日租样本",
@@ -151,10 +185,14 @@ const copy = {
     bedrooms: "卧室数量",
     bathrooms: "卫生间数量",
     submit: "开始查价",
+    monthlySubmit: "查询月租建议价",
+    dailySubmit: "查询短租每日价",
     loading: "正在执行查价，通常需要 2 到 4 分钟...",
+    monthlyLoading: "正在查询月租市场价格...",
+    dailyLoading: "正在查询短租每日价格...",
     errorPrefix: "查价失败",
-    dailyTrend: "日租价格趋势图",
-    monthlyTrend: "月租价格趋势图",
+    dailyTrend: "短租每日价格趋势图",
+    monthlyTrend: "月租30晚价格趋势图",
     daysCount: "天",
     chartSubtitle: "展示每个日期的市场中位数价格",
     noChartData: "暂无可用图表数据",
@@ -167,17 +205,25 @@ const copy = {
     dailyAvgHint: "查价区间内的平均日租中位数",
     monthlyAvgHint: "查价区间内的平均月租中位数",
     recommendations: "系统建议",
-    dailyPlan: "每天建议挂牌价",
+    dailyPlan: "短租每日建议价",
+    monthlyPlan: "月租建议价格",
     htmlReport: "HTML 报告",
     jsonData: "JSON 数据",
     date: "日期",
+    checkoutDate: "退房日",
+    marketMin: "市场最低",
+    marketP25: "P25低位价",
     marketMedian: "市场中位数",
     suggestedListPrice: "建议挂牌价",
     suggestedMinimumPrice: "建议底价",
+    suggestedDailyPrice: "建议日价",
+    suggestedMonthlyPrice: "建议30晚月租",
+    suggestedMinimumMonthlyPrice: "建议月租底价",
     samples: "样本数",
+    competition: "竞争强度",
     confidence: "置信度",
     note: "策略说明",
-    dailyDetails: "按日明细",
+    dailyDetails: "查价明细",
     dailyRentMedian: "日租中位数",
     monthlyRentMedian: "月租中位数",
     matchingStrategy: "匹配策略",
@@ -189,20 +235,28 @@ const copy = {
   },
   en: {
     browserKicker: "Airbnb Pricing Platform",
-    title: "Nearby Airbnb Daily and Monthly Price Lookup",
-    subtitle: "Enter listing conditions to view nearby Airbnb daily rates, monthly rates, charts, and suggested listing prices in one place.",
+    title: "Airbnb Monthly and Short-Stay Pricing",
+    subtitle: "Choose monthly or short-stay pricing and generate recommendations from nearby bookable comparable Airbnb listings.",
     languageLabel: "Language",
     auto: "Auto",
     chinese: "中文",
     english: "English",
-    dailyMedian: "Daily median",
-    monthlyMedian: "Monthly median",
-    dailyMedianHint: "Median daily rate for the selected lookup window",
-    monthlyMedianHint: "Median monthly rate for the selected lookup window",
+    dailyMedian: "Short-stay market median",
+    monthlyMedian: "Monthly market median",
+    dailyMedianHint: "Nightly market median for the selected short-stay window",
+    monthlyMedianHint: "30-night equivalent market median for the selected monthly window",
     formTitle: "Start a new lookup",
     formDesc: "Enter the target listing conditions and the platform will run the local Airbnb price lookup engine and visualize the result.",
+    pricingMode: "Pricing mode",
+    monthlyMode: "Monthly pricing",
+    dailyMode: "Short-stay daily pricing",
+    monthlyModeHint: "Find nearby listings bookable for 30 nights and return a daily price plus 30-night monthly price.",
+    dailyModeHint: "Check one-night availability day by day and return the best listing price for each date.",
     startDate: "Start date",
     endDate: "End date",
+    monthlyStartDate: "Earliest start date",
+    monthlyEndDate: "Latest checkout date",
+    minStayNights: "Monthly nights",
     address: "Address",
     addressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
     addressHint: "Address suggestions (Photon / OpenStreetMap) appear while typing. Selecting one fills in the address and pins its location.",
@@ -219,7 +273,7 @@ const copy = {
     progressDone: "Done",
     similarListings: "5 Suggested Nearby Comparable Listings",
     similarListingsDesc: "Rescored from this lookup's comparable samples, with priority given to listings whose card text is more related to the input city or area.",
-    similarListingsNone: "No comparable Airbnb listings near your input address were found. Try selecting a more precise Google Maps suggestion, or loosen the property/room-type filters and run the lookup again.",
+    similarListingsNone: "No comparable Airbnb listings near your input address were found. Try selecting a more precise address suggestion, or loosen the property/room-type filters and run the lookup again.",
     similarOpen: "Open on Airbnb",
     similarSeenIn: "Seen in",
     similarDaily: "Daily samples",
@@ -244,10 +298,14 @@ const copy = {
     bedrooms: "Bedrooms",
     bathrooms: "Bathrooms",
     submit: "Start lookup",
+    monthlySubmit: "Lookup monthly price",
+    dailySubmit: "Lookup daily prices",
     loading: "Running price lookup. This usually takes 2 to 4 minutes...",
+    monthlyLoading: "Looking up monthly market prices...",
+    dailyLoading: "Looking up short-stay daily prices...",
     errorPrefix: "Lookup failed",
-    dailyTrend: "Daily rate trend",
-    monthlyTrend: "Monthly rate trend",
+    dailyTrend: "Short-stay daily price trend",
+    monthlyTrend: "30-night monthly price trend",
     daysCount: "days",
     chartSubtitle: "Shows the market median price for each date",
     noChartData: "No chart data available yet",
@@ -260,14 +318,22 @@ const copy = {
     dailyAvgHint: "Average daily median in the lookup window",
     monthlyAvgHint: "Average monthly median in the lookup window",
     recommendations: "Recommendations",
-    dailyPlan: "Suggested daily listing prices",
+    dailyPlan: "Short-stay daily recommendations",
+    monthlyPlan: "Monthly price recommendations",
     htmlReport: "HTML report",
     jsonData: "JSON data",
     date: "Date",
+    checkoutDate: "Checkout",
+    marketMin: "Market low",
+    marketP25: "P25 low price",
     marketMedian: "Market median",
     suggestedListPrice: "Suggested list price",
     suggestedMinimumPrice: "Suggested floor price",
+    suggestedDailyPrice: "Suggested daily price",
+    suggestedMonthlyPrice: "Suggested 30-night price",
+    suggestedMinimumMonthlyPrice: "Monthly floor price",
     samples: "Samples",
+    competition: "Competition",
     confidence: "Confidence",
     note: "Notes",
     dailyDetails: "Daily details",
@@ -326,6 +392,21 @@ function translateConfidence(value: string, locale: Locale) {
   return mapping[value] || value;
 }
 
+function translateCompetitionLevel(value: string | null | undefined, locale: Locale) {
+  if (!value || locale === "zh") {
+    return value || "";
+  }
+
+  const mapping: Record<string, string> = {
+    强: "High",
+    正常: "Normal",
+    弱: "Low",
+    未知: "Unknown",
+  };
+
+  return mapping[value] || value;
+}
+
 function translateMatchLabel(value: string, locale: Locale) {
   if (locale === "zh") {
     return value;
@@ -360,7 +441,17 @@ function translatePlanNote(value: string, locale: Locale) {
     "略弱于均值，建议平价吸单": "Slightly weaker than average. A competitive price should help conversion.",
     "需求偏强，可小幅上调": "Demand is slightly elevated. A modest price increase is reasonable.",
     "没有足够的日租样本": "Not enough daily rate samples for this date.",
+    "建议略低于低位市场价，保持同区域高性价比": "Price slightly below the low market band to stay highly competitive nearby.",
+    "竞争强，建议靠近 P20 低位价格来提高转化": "Competition is high. Stay near the P20 low-price band to improve conversion.",
+    "供应较少，可以略高于低位价但仍低于市场中位数": "Supply is thinner. You can price above the low band while staying below the median.",
+    "没有足够的月租样本": "Not enough monthly samples for this start date.",
+    "月租样本偏少，建议价需要人工复核后再发布": "Monthly samples are thin. Review the recommendation manually before publishing.",
   };
+
+  const discountMatch = value.match(/^建议比市场中位数低约 (\d+)%/);
+  if (discountMatch && locale === "en") {
+    return `Suggested price is about ${discountMatch[1]}% below the market median, targeting the high-value low-price band.`;
+  }
 
   return mapping[value] || value;
 }
@@ -376,16 +467,40 @@ function translateRecommendation(value: string, locale: Locale) {
       (price) => `A good starting daily price is around ${price}, which is close to the median of the current comparable listings.`,
     ],
     [
+      /^短租每日建议价会优先低于附近同类房源的中位数，整体基准大约是 (C\$\d+) \/ 晚。$/,
+      (price) => `Short-stay recommendations prioritize prices below the nearby comparable median. The overall market baseline is about ${price} per night.`,
+    ],
+    [
+      /^月租建议价可以先围绕 (C\$\d+) \/ 30 晚，折合每天 (C\$\d+)。这个价格目标是落在附近同类月租房的低价高性价比区间。$/,
+      (monthly, daily) => `A practical monthly recommendation is around ${monthly} per 30 nights, or ${daily} per day, targeting the high-value low-price band.`,
+    ],
+    [
+      /^附近同类月租房市场中位数约 (C\$\d+) \/ 30 晚，建议价应低于中位数但不要盲目低于异常低价。$/,
+      (price) => `Nearby comparable monthly listings have a market median of about ${price} per 30 nights. Stay below the median without chasing abnormal outliers.`,
+    ],
+    [
       /^周五到周六的日租中位数比工作日高约 (\d+%)，周末可以考虑加价 5% 到 12%。$/,
       (premium) => `Friday to Saturday median daily prices are about ${premium} higher than weekdays, so a 5% to 12% weekend premium may be reasonable.`,
+    ],
+    [
+      /^周五到周六的日租中位数比工作日高约 (\d+%)，周末可以保留小幅溢价，但仍保持同区域高性价比。$/,
+      (premium) => `Friday to Saturday median daily prices are about ${premium} higher than weekdays, so a small weekend premium is reasonable while staying competitive.`,
     ],
     [
       /^高价日期集中在 (.+)，这些日期更适合采用偏进攻的挂牌价。$/,
       (dates) => `Higher-priced dates are concentrated around ${dates}. These dates are better suited to a more aggressive listing price.`,
     ],
     [
+      /^高价日期集中在 (.+)，这些日期不用压到全市场最低。$/,
+      (dates) => `Higher-priced dates are concentrated around ${dates}. These dates do not need to be priced at the absolute market low.`,
+    ],
+    [
       /^低价日期集中在 (.+)，这些日期更适合做折扣或最短入住限制放宽。$/,
       (dates) => `Lower-priced dates are concentrated around ${dates}. These dates are better candidates for discounts or looser minimum-stay rules.`,
+    ],
+    [
+      /^低价日期集中在 (.+)，这些日期建议更贴近低位市场价来提高入住率。$/,
+      (dates) => `Lower-priced dates are concentrated around ${dates}. Price closer to the low market band to improve occupancy.`,
     ],
     [
       /^月租的市场中位数大约在 (C\$\d+) \/ (\d+) 晚，可以把月租打包价先定在这个区间附近，再按装修和位置微调。$/,
@@ -396,8 +511,20 @@ function translateRecommendation(value: string, locale: Locale) {
       (dates) => `Stronger monthly check-in dates mainly appear around ${dates}. If you support longer stays, these start dates are worth prioritizing.`,
     ],
     [
+      /^月租竞争价格较高的起租日主要是 (.+)，这些日期可以优先开放。$/,
+      (dates) => `Monthly start dates with stronger market pricing are ${dates}. These start dates are worth prioritizing.`,
+    ],
+    [
       /^当前每个日期抓到的可比样本偏少，建议在报告基础上再人工补看 1 到 2 页搜索结果，避免被个别异常价格带偏。$/,
       () => "The comparable sample count per date is still a bit thin. It is worth checking one or two more Airbnb result pages manually so outliers do not skew pricing decisions.",
+    ],
+    [
+      /^当前月租可比样本偏少，建议把搜索半径放大或补看 Airbnb 第二页，避免被个别异常房源带偏。$/,
+      () => "Monthly comparable samples are thin. Expand the radius or check the second Airbnb results page so outliers do not skew the recommendation.",
+    ],
+    [
+      /^当前短租可比样本偏少，建议放宽物业类型或扩大搜索半径后再复查一次。$/,
+      () => "Short-stay comparable samples are thin. Loosen the property type or expand the search radius and run it again.",
     ],
   ];
 
@@ -723,6 +850,7 @@ export function MarketDashboard() {
   const [mounted, setMounted] = useState(false);
   const [localePreference, setLocalePreference] = useState<LocalePreference>("auto");
   const [form, setForm] = useState({
+    pricingMode: "monthly" as PricingMode,
     startDate: "",
     endDate: "",
     address: "",
@@ -730,6 +858,7 @@ export function MarketDashboard() {
     roomType: "整套房源",
     bedrooms: "2",
     bathrooms: "2",
+    monthlyStayLength: "30",
   });
   const [loading, setLoading] = useState(false);
   const [hasLookupStarted, setHasLookupStarted] = useState(false);
@@ -797,6 +926,18 @@ export function MarketDashboard() {
     };
   }, [result]);
 
+  const planSummary = useMemo(() => {
+    if (!result) {
+      return null;
+    }
+
+    return {
+      dailySuggested: calcSummary(result.report.dailyPricingPlan.map((row) => row.suggestedListPrice)),
+      monthlySuggested: calcSummary((result.report.monthlyPricingPlan || []).map((row) => row.suggestedMonthlyPrice)),
+      monthlySuggestedDaily: calcSummary((result.report.monthlyPricingPlan || []).map((row) => row.suggestedDailyPrice)),
+    };
+  }, [result]);
+
   const suggestedListings = useMemo(() => {
     if (!result) {
       return [];
@@ -804,6 +945,9 @@ export function MarketDashboard() {
 
     return buildSuggestedListings(result.report.rows, result.report.input);
   }, [result]);
+
+  const activeMode: PricingMode =
+    result?.report.pricingMode || result?.report.input.pricingMode || form.pricingMode;
 
   useEffect(() => {
     if (!addressFocused || form.address.trim().length < 3) {
@@ -880,11 +1024,34 @@ export function MarketDashboard() {
 
     const bedroomsNumber = Number(form.bedrooms);
     const bathroomsNumber = Number(form.bathrooms);
+    const monthlyStayLengthNumber = Number(form.monthlyStayLength);
 
     if (!form.startDate || !form.endDate) {
       setError(locale === "zh" ? "请选择开始日期和结束日期。" : "Please select both start and end dates.");
       setHasLookupStarted(false);
       return;
+    }
+
+    if (form.pricingMode === "monthly") {
+      const startMs = Date.parse(form.startDate);
+      const endMs = Date.parse(form.endDate);
+      const spanNights = Math.round((endMs - startMs) / (24 * 3600 * 1000));
+
+      if (!Number.isFinite(monthlyStayLengthNumber) || monthlyStayLengthNumber < 28) {
+        setError(locale === "zh" ? "月租晚数必须至少为 28。" : "Monthly nights must be at least 28.");
+        setHasLookupStarted(false);
+        return;
+      }
+
+      if (!Number.isFinite(spanNights) || spanNights < monthlyStayLengthNumber) {
+        setError(
+          locale === "zh"
+            ? `月租模式的日期范围至少需要 ${monthlyStayLengthNumber} 晚。`
+            : `Monthly mode needs at least ${monthlyStayLengthNumber} nights between start and end date.`,
+        );
+        setHasLookupStarted(false);
+        return;
+      }
     }
 
     if (form.address.trim().length < 5) {
@@ -924,6 +1091,7 @@ export function MarketDashboard() {
           ...form,
           bedrooms: bedroomsNumber,
           bathrooms: bathroomsNumber,
+          monthlyStayLength: monthlyStayLengthNumber,
           locale: toRequestLocale(locale),
           ...(addressLocation
             ? {
@@ -1080,16 +1248,33 @@ export function MarketDashboard() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2.5">
-                <SummaryCard
-                  label={t.dailyMedian}
-                  value={summary?.daily ? formatMoney(summary.daily.median) : t.generated}
-                  hint={t.dailyMedianHint}
-                />
-                <SummaryCard
-                  label={t.monthlyMedian}
-                  value={summary?.monthly ? formatMoney(summary.monthly.median) : t.generated}
-                  hint={t.monthlyMedianHint}
-                />
+                {activeMode === "monthly" ? (
+                  <>
+                    <SummaryCard
+                      label={t.suggestedDailyPrice}
+                      value={planSummary?.monthlySuggestedDaily ? formatMoney(planSummary.monthlySuggestedDaily.median) : t.generated}
+                      hint={t.monthlyModeHint}
+                    />
+                    <SummaryCard
+                      label={t.suggestedMonthlyPrice}
+                      value={planSummary?.monthlySuggested ? formatMoney(planSummary.monthlySuggested.median) : t.generated}
+                      hint={t.monthlyMedianHint}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <SummaryCard
+                      label={t.suggestedListPrice}
+                      value={planSummary?.dailySuggested ? formatMoney(planSummary.dailySuggested.avg) : t.generated}
+                      hint={t.dailyModeHint}
+                    />
+                    <SummaryCard
+                      label={t.dailyMedian}
+                      value={summary?.daily ? formatMoney(summary.daily.median) : t.generated}
+                      hint={t.dailyMedianHint}
+                    />
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1104,8 +1289,39 @@ export function MarketDashboard() {
           </div>
 
           <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="md:col-span-2 xl:col-span-4">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.pricingMode}</span>
+              <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+                {([
+                  ["monthly", t.monthlyMode, t.monthlyModeHint],
+                  ["daily", t.dailyMode, t.dailyModeHint],
+                ] as const).map(([value, label, hint]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={form.pricingMode === value}
+                    onClick={() => {
+                      setForm((current) => ({ ...current, pricingMode: value }));
+                      setError(null);
+                      setProgress(null);
+                      setResult(null);
+                    }}
+                    className={`min-h-[78px] rounded-[1.1rem] border px-4 py-3 text-left transition ${
+                      form.pricingMode === value
+                        ? "border-[var(--accent)] bg-[var(--accent-soft)] shadow-[0_12px_26px_rgba(255,56,92,0.12)]"
+                        : "border-[var(--line)] bg-[#fffdfc] hover:bg-[#fff6f4]"
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-[var(--ink)]">{label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--muted)]">{hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="space-y-1.5">
-              <span className="text-xs font-medium text-[var(--muted)]">{t.startDate}</span>
+              <span className="text-xs font-medium text-[var(--muted)]">
+                {form.pricingMode === "monthly" ? t.monthlyStartDate : t.startDate}
+              </span>
               <input
                 type="date"
                 className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
@@ -1114,7 +1330,9 @@ export function MarketDashboard() {
               />
             </label>
             <label className="space-y-1.5">
-              <span className="text-xs font-medium text-[var(--muted)]">{t.endDate}</span>
+              <span className="text-xs font-medium text-[var(--muted)]">
+                {form.pricingMode === "monthly" ? t.monthlyEndDate : t.endDate}
+              </span>
               <input
                 type="date"
                 className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
@@ -1122,7 +1340,20 @@ export function MarketDashboard() {
                 onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))}
               />
             </label>
-            <label className="space-y-1.5 md:col-span-2">
+            {form.pricingMode === "monthly" ? (
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium text-[var(--muted)]">{t.minStayNights}</span>
+                <input
+                  type="number"
+                  min="28"
+                  step="1"
+                  className="w-full rounded-[1.1rem] border border-[var(--line)] bg-[#fffdfc] px-4 py-2.5"
+                  value={form.monthlyStayLength}
+                  onChange={(event) => setForm((current) => ({ ...current, monthlyStayLength: event.target.value }))}
+                />
+              </label>
+            ) : null}
+            <label className={`space-y-1.5 ${form.pricingMode === "monthly" ? "md:col-span-1 xl:col-span-2" : "md:col-span-2"}`}>
               <span className="text-xs font-medium text-[var(--muted)]">{t.address}</span>
               <div className="relative">
                 <input
@@ -1244,7 +1475,13 @@ export function MarketDashboard() {
                   disabled={loading}
                   className="rounded-[1.1rem] bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(255,56,92,0.28)] transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
                 >
-                  {loading ? t.loading : t.submit}
+                  {loading
+                    ? form.pricingMode === "monthly"
+                      ? t.monthlyLoading
+                      : t.dailyLoading
+                    : form.pricingMode === "monthly"
+                      ? t.monthlySubmit
+                      : t.dailySubmit}
                 </button>
                 {hasLookupStarted ? (
                   <div className="min-w-0 flex-1 rounded-[1.1rem] border border-[var(--line)] bg-[#fffaf9] px-4 py-3">
@@ -1318,32 +1555,30 @@ export function MarketDashboard() {
 
         {result ? (
           <>
-            <section className="grid gap-4 xl:grid-cols-2">
-              <TrendChart title={t.dailyTrend} subtitle={t.chartSubtitle} daysLabel={t.daysCount} emptyLabel={t.noChartData} color="#ff385c" rows={result.report.rows} type="daily" />
-              <TrendChart title={t.monthlyTrend} subtitle={t.chartSubtitle} daysLabel={t.daysCount} emptyLabel={t.noChartData} color="#b32572" rows={result.report.rows} type="monthly" />
+            <section className="grid gap-4">
+              {activeMode === "monthly" ? (
+                <TrendChart title={t.monthlyTrend} subtitle={t.chartSubtitle} daysLabel={t.daysCount} emptyLabel={t.noChartData} color="#b32572" rows={result.report.rows} type="monthly" />
+              ) : (
+                <TrendChart title={t.dailyTrend} subtitle={t.chartSubtitle} daysLabel={t.daysCount} emptyLabel={t.noChartData} color="#ff385c" rows={result.report.rows} type="daily" />
+              )}
             </section>
 
             <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard
-                label={t.dailyHigh}
-                value={summary?.daily ? formatMoney(summary.daily.max) : "N/A"}
-                hint={t.dailyHighHint}
-              />
-              <SummaryCard
-                label={t.dailyLow}
-                value={summary?.daily ? formatMoney(summary.daily.min) : "N/A"}
-                hint={t.dailyLowHint}
-              />
-              <SummaryCard
-                label={t.dailyAvg}
-                value={summary?.daily ? formatMoney(summary.daily.avg) : "N/A"}
-                hint={t.dailyAvgHint}
-              />
-              <SummaryCard
-                label={t.monthlyAvg}
-                value={summary?.monthly ? formatMoney(summary.monthly.avg) : "N/A"}
-                hint={t.monthlyAvgHint}
-              />
+              {activeMode === "monthly" ? (
+                <>
+                  <SummaryCard label={t.marketMin} value={summary?.monthly ? formatMoney(summary.monthly.min) : "N/A"} hint={t.monthlyMedianHint} />
+                  <SummaryCard label={t.monthlyMedian} value={summary?.monthly ? formatMoney(summary.monthly.median) : "N/A"} hint={t.monthlyMedianHint} />
+                  <SummaryCard label={t.suggestedDailyPrice} value={planSummary?.monthlySuggestedDaily ? formatMoney(planSummary.monthlySuggestedDaily.median) : "N/A"} hint={t.monthlyModeHint} />
+                  <SummaryCard label={t.suggestedMonthlyPrice} value={planSummary?.monthlySuggested ? formatMoney(planSummary.monthlySuggested.median) : "N/A"} hint={t.monthlyAvgHint} />
+                </>
+              ) : (
+                <>
+                  <SummaryCard label={t.dailyHigh} value={summary?.daily ? formatMoney(summary.daily.max) : "N/A"} hint={t.dailyHighHint} />
+                  <SummaryCard label={t.dailyLow} value={summary?.daily ? formatMoney(summary.daily.min) : "N/A"} hint={t.dailyLowHint} />
+                  <SummaryCard label={t.dailyAvg} value={summary?.daily ? formatMoney(summary.daily.avg) : "N/A"} hint={t.dailyAvgHint} />
+                  <SummaryCard label={t.suggestedListPrice} value={planSummary?.dailySuggested ? formatMoney(planSummary.dailySuggested.avg) : "N/A"} hint={t.dailyModeHint} />
+                </>
+              )}
             </section>
 
             <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
@@ -1439,7 +1674,9 @@ export function MarketDashboard() {
             <section className="rounded-[2rem] border border-[var(--line)] bg-white/94 px-5 py-5 shadow-[0_16px_40px_rgba(34,34,34,0.06)] sm:px-6">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-[var(--ink)]">{t.dailyPlan}</h2>
+                  <h2 className="text-xl font-semibold text-[var(--ink)]">
+                    {activeMode === "monthly" ? t.monthlyPlan : t.dailyPlan}
+                  </h2>
                   <p className="mt-1.5 text-sm text-[var(--muted)]">
                     {result.report.input.address} · {translatePropertyType(result.report.input.propertyType?.display || t.noPropertyLimit, locale)} · {translateRoomType(result.report.input.roomType.display, locale)}
                   </p>
@@ -1481,28 +1718,64 @@ export function MarketDashboard() {
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-sm">
                   <thead>
-                    <tr className="text-left text-[var(--muted)]">
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.date}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMedian}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedListPrice}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedMinimumPrice}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.samples}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.confidence}</th>
-                      <th className="border-b border-[var(--line)] px-3 py-2.5">{t.note}</th>
-                    </tr>
+                    {activeMode === "monthly" ? (
+                      <tr className="text-left text-[var(--muted)]">
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.date}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.checkoutDate}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMin}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketP25}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMedian}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedDailyPrice}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedMonthlyPrice}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.samples}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.confidence}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.note}</th>
+                      </tr>
+                    ) : (
+                      <tr className="text-left text-[var(--muted)]">
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.date}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMin}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketP25}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.marketMedian}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedListPrice}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.suggestedMinimumPrice}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.samples}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.competition}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.confidence}</th>
+                        <th className="border-b border-[var(--line)] px-3 py-2.5">{t.note}</th>
+                      </tr>
+                    )}
                   </thead>
                   <tbody>
-                    {result.report.dailyPricingPlan.map((row) => (
-                      <tr key={row.date}>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-medium text-[var(--ink)]">{row.date}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMedian)}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedListPrice)}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.suggestedMinimumPrice)}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.comparableCount}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateConfidence(row.confidence, locale)}</td>
-                        <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translatePlanNote(row.note, locale)}</td>
-                      </tr>
-                    ))}
+                    {activeMode === "monthly"
+                      ? (result.report.monthlyPricingPlan || []).map((row) => (
+                          <tr key={`${row.date}-${row.checkoutDate}`}>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-medium text-[var(--ink)]">{row.date}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.checkoutDate}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMin)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketP25)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMedian)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedDailyPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedMonthlyPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.comparableCount}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateConfidence(row.confidence, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translatePlanNote(row.note, locale)}</td>
+                          </tr>
+                        ))
+                      : result.report.dailyPricingPlan.map((row) => (
+                          <tr key={row.date}>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-medium text-[var(--ink)]">{row.date}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMin)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketP25)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.marketMedian)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5 font-semibold text-[var(--accent-deep)]">{formatMoney(row.suggestedListPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{formatMoney(row.suggestedMinimumPrice)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{row.comparableCount}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateCompetitionLevel(row.competitionLevel, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translateConfidence(row.confidence, locale)}</td>
+                            <td className="border-b border-[#f2e7e3] px-3 py-2.5">{translatePlanNote(row.note, locale)}</td>
+                          </tr>
+                        ))}
                   </tbody>
                 </table>
               </div>
