@@ -109,6 +109,53 @@ type ApiResponse = {
   stderr: string;
 };
 
+type ListingCheckReport = {
+  generatedAt: string;
+  checkType?: "listing-competitiveness";
+  input: {
+    listingUrl: string;
+    startDate: string;
+    checkoutDate: string;
+    stayNights: number;
+    radiusKm: number;
+  };
+  subjectListing: {
+    listingUrl: string;
+    resolvedUrl?: string;
+    roomId?: string | null;
+    title?: string | null;
+    textSnippet?: string | null;
+    coordinates?: { latitude: number; longitude: number } | null;
+    propertyType: string | null;
+    roomType: string | null;
+    bedrooms: number | null;
+    bathrooms: number | null;
+    priceForStay: number | null;
+    price30: number | null;
+    dailyAverage: number | null;
+    priceBasis?: string | null;
+  };
+  market: {
+    comparableCount: number;
+    priceStats?: PriceStats | null;
+    lowestComparable?: ComparableListing | null;
+    hasSubjectPrice?: boolean;
+    isLowest: boolean;
+    targetMonthlyPrice: number | null;
+    targetDailyPrice: number | null;
+    recommendation?: string;
+  };
+  comparableListings: ComparableListing[];
+};
+
+type ListingCheckApiResponse = {
+  report: ListingCheckReport;
+  savedJsonPath?: string;
+  reportJsonUrl?: string;
+  stdout?: string;
+  stderr?: string;
+};
+
 type AddressSuggestion = {
   placeId: string;
   text: string;
@@ -242,6 +289,30 @@ const copy = {
     emptyState: "提交一次查价后，这里会显示图表、统计值、建议挂牌价和报告输出路径。",
     generated: "未生成",
     noPropertyLimit: "不限物业类型",
+    listingCheckTitle: "Airbnb 房源最低价核对",
+    listingCheckDesc: "复制房源链接，填写最短入住晚数；系统默认用明天作为起租日，在附近 5 km 内筛选相似房源。",
+    listingCheckUrl: "Airbnb 房源链接",
+    listingCheckUrlPlaceholder: "https://www.airbnb.ca/rooms/...",
+    listingCheckStartDate: "核对起租日",
+    listingCheckStartDateHint: "默认明天，可按实际开放日期修改。",
+    listingCheckStayNights: "最短入住晚数",
+    listingCheckSubmit: "核对是否最低价",
+    listingCheckLoading: "正在核对附近 5 km 同类房源...",
+    listingCheckResultTitle: "低价核对结果",
+    listingCheckIsLowest: "当前已经是附近 5 km 同类房源最低价",
+    listingCheckNotLowest: "当前不是最低价",
+    listingCheckNoSubjectPrice: "未识别到当前房源价格，以下为成为区域最低价的目标价。",
+    listingCheckSubjectPrice: "当前30晚等效价",
+    listingCheckTargetPrice: "建议30晚目标价",
+    listingCheckTargetDaily: "建议日均价",
+    listingCheckMarketLow: "区域最低同类价",
+    listingCheckComparableCount: "同类样本",
+    listingCheckLowest: "最低同类房源",
+    listingCheckComparables: "附近相似房源",
+    listingCheckOpen: "打开",
+    listingCheckJson: "查看 JSON",
+    listingCheckNoComparables: "没有抓到可用的同类样本。可换一个起租日或稍后重试。",
+    listingCheckRule: "为确保成为最低价，系统会建议低于当前最低同类竞品 C$5，并向下取整到 C$5。",
   },
   en: {
     browserKicker: "Airbnb Pricing Platform",
@@ -363,6 +434,30 @@ const copy = {
     emptyState: "Submit a lookup to see charts, summary stats, suggested prices, and report paths here.",
     generated: "Not generated",
     noPropertyLimit: "Any property type",
+    listingCheckTitle: "Airbnb Listing Lowest-Price Check",
+    listingCheckDesc: "Paste a listing URL and minimum stay nights. The system defaults to tomorrow as the start date and checks similar listings within 5 km.",
+    listingCheckUrl: "Airbnb listing URL",
+    listingCheckUrlPlaceholder: "https://www.airbnb.ca/rooms/...",
+    listingCheckStartDate: "Check-in date",
+    listingCheckStartDateHint: "Defaults to tomorrow. Change it to match the actual open date.",
+    listingCheckStayNights: "Minimum stay nights",
+    listingCheckSubmit: "Check lowest price",
+    listingCheckLoading: "Checking similar listings within 5 km...",
+    listingCheckResultTitle: "Lowest-price check result",
+    listingCheckIsLowest: "This listing is already the lowest comparable listing within 5 km",
+    listingCheckNotLowest: "This listing is not the lowest",
+    listingCheckNoSubjectPrice: "The current listing price was not detected. The target below is the price needed to become the area low.",
+    listingCheckSubjectPrice: "Current 30-night equivalent",
+    listingCheckTargetPrice: "Suggested 30-night target",
+    listingCheckTargetDaily: "Suggested daily average",
+    listingCheckMarketLow: "Lowest comparable price",
+    listingCheckComparableCount: "Comparable samples",
+    listingCheckLowest: "Lowest comparable listing",
+    listingCheckComparables: "Nearby similar listings",
+    listingCheckOpen: "Open",
+    listingCheckJson: "View JSON",
+    listingCheckNoComparables: "No usable comparable samples were found. Try another start date or run it again later.",
+    listingCheckRule: "To become the lowest listing, the system recommends C$5 below the current lowest comparable, rounded down to the nearest C$5.",
   },
 } as const;
 
@@ -574,6 +669,17 @@ function createSessionToken() {
 
 function toRequestLocale(locale: Locale) {
   return locale === "zh" ? "zh" : "en";
+}
+
+function formatDateInput(date: Date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function defaultListingCheckStartDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return formatDateInput(date);
 }
 
 function formatMoney(value: number | null | undefined) {
@@ -891,9 +997,17 @@ export function MarketDashboard() {
     bathrooms: "2",
     monthlyStayLength: "30",
   });
+  const [listingCheckForm, setListingCheckForm] = useState(() => ({
+    listingUrl: "",
+    startDate: "",
+    stayNights: "30",
+  }));
   const [loading, setLoading] = useState(false);
+  const [listingCheckLoading, setListingCheckLoading] = useState(false);
   const [hasLookupStarted, setHasLookupStarted] = useState(false);
+  const [hasListingCheckStarted, setHasListingCheckStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [listingCheckError, setListingCheckError] = useState<string | null>(null);
   const [diagnosticUrls, setDiagnosticUrls] = useState<string[]>([]);
   const [progress, setProgress] = useState<{
     totalDays: number;
@@ -901,6 +1015,7 @@ export function MarketDashboard() {
     currentDate: string | null;
   } | null>(null);
   const [result, setResult] = useState<ApiResponse | null>(null);
+  const [listingCheckResult, setListingCheckResult] = useState<ListingCheckApiResponse | null>(null);
   const [systemLocale, setSystemLocale] = useState<Locale>("zh");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [addressLoading, setAddressLoading] = useState(false);
@@ -910,6 +1025,7 @@ export function MarketDashboard() {
   const [addressAutocompleteStatus, setAddressAutocompleteStatus] = useState<"unknown" | "ready" | "disabled">("unknown");
   const [addressSessionToken, setAddressSessionToken] = useState(() => createSessionToken());
   const pollIntervalRef = useRef<number | null>(null);
+  const listingCheckPollIntervalRef = useRef<number | null>(null);
 
   function clearPolling() {
     if (pollIntervalRef.current !== null) {
@@ -918,11 +1034,22 @@ export function MarketDashboard() {
     }
   }
 
+  function clearListingCheckPolling() {
+    if (listingCheckPollIntervalRef.current !== null) {
+      window.clearInterval(listingCheckPollIntervalRef.current);
+      listingCheckPollIntervalRef.current = null;
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current !== null) {
         window.clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
+      }
+      if (listingCheckPollIntervalRef.current !== null) {
+        window.clearInterval(listingCheckPollIntervalRef.current);
+        listingCheckPollIntervalRef.current = null;
       }
     };
   }, []);
@@ -936,6 +1063,9 @@ export function MarketDashboard() {
     if (savedPreference === "zh" || savedPreference === "en" || savedPreference === "auto") {
       setLocalePreference(savedPreference);
     }
+    setListingCheckForm((current) => (
+      current.startDate ? current : { ...current, startDate: defaultListingCheckStartDate() }
+    ));
   }, []);
 
   const locale: Locale = localePreference === "auto" ? systemLocale : localePreference;
@@ -979,6 +1109,7 @@ export function MarketDashboard() {
 
   const activeMode: PricingMode =
     result?.report.pricingMode || result?.report.input.pricingMode || form.pricingMode;
+  const listingCheckReport = listingCheckResult?.report ?? null;
 
   useEffect(() => {
     if (!addressFocused || form.address.trim().length < 3) {
@@ -1239,6 +1370,100 @@ export function MarketDashboard() {
 
     void tick();
     pollIntervalRef.current = window.setInterval(tick, 4000);
+  }
+
+  async function onListingCheckSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const listingUrl = listingCheckForm.listingUrl.trim();
+    const stayNightsNumber = Number(listingCheckForm.stayNights);
+
+    if (!/^https?:\/\/(?:www\.)?airbnb\.[a-z.]+\/rooms\/\d+/i.test(listingUrl)) {
+      setListingCheckError(locale === "zh" ? "请输入有效的 Airbnb 房源链接。" : "Please enter a valid Airbnb listing URL.");
+      setHasListingCheckStarted(false);
+      return;
+    }
+
+    if (!Number.isFinite(stayNightsNumber) || stayNightsNumber < 28) {
+      setListingCheckError(locale === "zh" ? "最短入住晚数必须至少为 28。" : "Minimum stay nights must be at least 28.");
+      setHasListingCheckStarted(false);
+      return;
+    }
+
+    setHasListingCheckStarted(true);
+    setListingCheckLoading(true);
+    setListingCheckError(null);
+    setListingCheckResult(null);
+    clearListingCheckPolling();
+
+    try {
+      const response = await fetch("/api/listing-competitiveness", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "accept-language": locale,
+        },
+        body: JSON.stringify({
+          listingUrl,
+          startDate: listingCheckForm.startDate || undefined,
+          stayNights: stayNightsNumber,
+          locale: toRequestLocale(locale),
+        }),
+      });
+
+      const payload = await safeJson(response);
+
+      if (!response.ok || !payload.jobId) {
+        throw new Error(
+          payload.error || `${response.status} ${response.statusText || ""}`.trim() || t.errorPrefix,
+        );
+      }
+
+      pollListingCheckJob(String(payload.jobId));
+    } catch (submitError) {
+      setListingCheckError(submitError instanceof Error ? submitError.message : t.errorPrefix);
+      setListingCheckLoading(false);
+    }
+  }
+
+  function pollListingCheckJob(jobId: string) {
+    clearListingCheckPolling();
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/listing-competitiveness?jobId=${encodeURIComponent(jobId)}`, {
+          headers: { "accept-language": locale },
+        });
+        const payload = await safeJson(res);
+
+        if (!res.ok) {
+          clearListingCheckPolling();
+          setListingCheckError(
+            payload.error || `${res.status} ${res.statusText || ""}`.trim() || t.errorPrefix,
+          );
+          setListingCheckLoading(false);
+          return;
+        }
+
+        const status = payload.status;
+        if (status === "done") {
+          clearListingCheckPolling();
+          setListingCheckResult(payload as unknown as ListingCheckApiResponse);
+          setListingCheckLoading(false);
+          return;
+        }
+
+        if (status === "failed") {
+          clearListingCheckPolling();
+          setListingCheckError((payload.error as string) || t.errorPrefix);
+          setListingCheckLoading(false);
+        }
+      } catch {
+        // keep polling through transient network failures
+      }
+    };
+
+    void tick();
+    listingCheckPollIntervalRef.current = window.setInterval(tick, 4000);
   }
 
   function updateLocalePreference(value: LocalePreference) {
@@ -1602,6 +1827,220 @@ export function MarketDashboard() {
                   ))}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+          <div className="mb-3 flex flex-col gap-1 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--ink)]">{t.listingCheckTitle}</h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{t.listingCheckDesc}</p>
+            </div>
+            <p className="text-xs text-[var(--muted)]">{t.listingCheckRule}</p>
+          </div>
+
+          <form onSubmit={onListingCheckSubmit} className="grid gap-2.5 lg:grid-cols-[minmax(0,1.8fr)_180px_160px_auto] lg:items-end">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.listingCheckUrl}</span>
+              <input
+                type="url"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                placeholder={t.listingCheckUrlPlaceholder}
+                value={listingCheckForm.listingUrl}
+                onChange={(event) => setListingCheckForm((current) => ({ ...current, listingUrl: event.target.value }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.listingCheckStartDate}</span>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={listingCheckForm.startDate}
+                onChange={(event) => setListingCheckForm((current) => ({ ...current, startDate: event.target.value }))}
+              />
+              <span className="block text-[11px] leading-4 text-[var(--muted)]">{t.listingCheckStartDateHint}</span>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.listingCheckStayNights}</span>
+              <input
+                type="number"
+                min="28"
+                max="180"
+                step="1"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={listingCheckForm.stayNights}
+                onChange={(event) => setListingCheckForm((current) => ({ ...current, stayNights: event.target.value }))}
+              />
+            </label>
+            <button
+              disabled={listingCheckLoading}
+              className="rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
+            >
+              {listingCheckLoading ? t.listingCheckLoading : t.listingCheckSubmit}
+            </button>
+          </form>
+
+          {hasListingCheckStarted ? (
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-[#fffaf9] px-3 py-2 text-xs text-[var(--muted)]">
+              <span>{listingCheckLoading ? t.listingCheckLoading : t.progressDone}</span>
+              <span className={listingCheckLoading ? "text-[var(--accent-deep)]" : "text-[var(--muted)]"}>
+                {listingCheckLoading ? t.progressActive : t.progressDone}
+              </span>
+            </div>
+          ) : null}
+
+          {listingCheckError ? (
+            <div className="mt-2 rounded-lg border border-rose-200 bg-[var(--accent-soft)] px-3 py-2 text-sm text-rose-700">
+              {t.errorPrefix}: {listingCheckError}
+            </div>
+          ) : null}
+
+          {listingCheckReport ? (
+            <div className="mt-3 space-y-3">
+              <div
+                className={`rounded-lg border px-3 py-3 ${
+                  listingCheckReport.market.hasSubjectPrice === false
+                    ? "border-amber-200 bg-[#fff9ea]"
+                    : listingCheckReport.market.isLowest
+                      ? "border-emerald-200 bg-[#f3fff8]"
+                      : "border-rose-200 bg-[#fff6f8]"
+                }`}
+              >
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{t.listingCheckResultTitle}</p>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--ink)]">
+                      {listingCheckReport.market.hasSubjectPrice === false
+                        ? t.listingCheckNoSubjectPrice
+                        : listingCheckReport.market.isLowest
+                          ? t.listingCheckIsLowest
+                          : t.listingCheckNotLowest}
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{listingCheckReport.market.recommendation}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    {listingCheckResult?.reportJsonUrl ? (
+                      <a
+                        href={listingCheckResult.reportJsonUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)]"
+                      >
+                        {t.listingCheckJson}
+                      </a>
+                    ) : null}
+                    <a
+                      href={listingCheckReport.input.listingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-105"
+                    >
+                      {t.listingCheckOpen}
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  <SummaryCard label={t.listingCheckSubjectPrice} value={formatMoney(listingCheckReport.subjectListing.price30)} hint={`${listingCheckReport.input.stayNights} ${t.daysCount}`} />
+                  <SummaryCard label={t.listingCheckMarketLow} value={formatMoney(listingCheckReport.market.lowestComparable?.price)} hint={t.listingCheckLowest} />
+                  <SummaryCard label={t.listingCheckTargetPrice} value={formatMoney(listingCheckReport.market.targetMonthlyPrice)} hint={t.listingCheckRule} />
+                  <SummaryCard label={t.listingCheckTargetDaily} value={formatMoney(listingCheckReport.market.targetDailyPrice)} hint={t.monthlyModeHint} />
+                  <SummaryCard label={t.listingCheckComparableCount} value={String(listingCheckReport.market.comparableCount)} hint={`${listingCheckReport.input.radiusKm} km`} />
+                </div>
+              </div>
+
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+                <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-3">
+                  <h3 className="text-sm font-semibold text-[var(--ink)]">{listingCheckReport.subjectListing.title || "Airbnb"}</h3>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-[var(--muted)]">
+                    {listingCheckReport.subjectListing.propertyType ? (
+                      <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                        {translatePropertyType(listingCheckReport.subjectListing.propertyType, locale)}
+                      </span>
+                    ) : null}
+                    {listingCheckReport.subjectListing.roomType ? (
+                      <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                        {translateRoomType(listingCheckReport.subjectListing.roomType, locale)}
+                      </span>
+                    ) : null}
+                    {listingCheckReport.subjectListing.bedrooms != null ? (
+                      <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                        {listingCheckReport.subjectListing.bedrooms} {t.similarBedrooms}
+                      </span>
+                    ) : null}
+                    {listingCheckReport.subjectListing.bathrooms != null ? (
+                      <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                        {listingCheckReport.subjectListing.bathrooms} {t.similarBathrooms}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 break-all text-xs text-[var(--muted)]">{listingCheckReport.subjectListing.resolvedUrl || listingCheckReport.subjectListing.listingUrl}</p>
+                </div>
+
+                <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-[var(--ink)]">{t.listingCheckLowest}</h3>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {listingCheckReport.market.lowestComparable
+                          ? `${translatePropertyType(listingCheckReport.market.lowestComparable.propertyType, locale) || translateRoomType(listingCheckReport.market.lowestComparable.roomType, locale) || "Airbnb"} · ${formatMoney(listingCheckReport.market.lowestComparable.price)}`
+                          : t.listingCheckNoComparables}
+                      </p>
+                    </div>
+                    {listingCheckReport.market.lowestComparable?.href ? (
+                      <a
+                        href={listingCheckReport.market.lowestComparable.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)]"
+                      >
+                        {t.listingCheckOpen}
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--ink)]">{t.listingCheckComparables}</h3>
+                {listingCheckReport.comparableListings.length ? (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                      <thead>
+                        <tr className="text-left text-[var(--muted)]">
+                          <th className="border-b border-[var(--line)] px-2.5 py-2">{t.listingCheckMarketLow}</th>
+                          <th className="border-b border-[var(--line)] px-2.5 py-2">{t.propertyType}</th>
+                          <th className="border-b border-[var(--line)] px-2.5 py-2">{t.roomType}</th>
+                          <th className="border-b border-[var(--line)] px-2.5 py-2">{t.bedrooms}</th>
+                          <th className="border-b border-[var(--line)] px-2.5 py-2">{t.bathrooms}</th>
+                          <th className="border-b border-[var(--line)] px-2.5 py-2">{t.listingCheckOpen}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {listingCheckReport.comparableListings.slice(0, 8).map((listing, index) => (
+                          <tr key={`${listing.href}-${index}`}>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2 font-semibold text-[var(--accent-deep)]">{formatMoney(listing.price)}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translatePropertyType(listing.propertyType, locale) || "N/A"}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{translateRoomType(listing.roomType, locale) || "N/A"}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{listing.bedrooms ?? "N/A"}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">{listing.bathrooms ?? "N/A"}</td>
+                            <td className="border-b border-[#f2e7e3] px-2.5 py-2">
+                              <a href={listing.href} target="_blank" rel="noreferrer" className="font-semibold text-[var(--accent-deep)] underline">
+                                {t.listingCheckOpen}
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-3 py-4 text-sm text-[var(--muted)]">
+                    {t.listingCheckNoComparables}
+                  </div>
+                )}
+              </div>
             </div>
           ) : null}
         </section>

@@ -77,7 +77,7 @@ const PROPERTY_TYPE_ALIASES = [
   {
     key: 'house',
     labels: ['独立屋', 'house', 'villa'],
-    keywords: [' house ', ' house in ', 'residential home', 'villa', 'cottage', 'bungalow', '独立屋'],
+    keywords: [' house ', ' house in ', ' home in ', 'residential home', 'villa', 'cottage', 'bungalow', '独立屋'],
     display: '独立屋',
   },
   {
@@ -135,6 +135,7 @@ function parseArgs(argv) {
     headed: false,
     headless: false,
     pricingMode: 'daily',
+    listingCheckUrl: null,
     browser: null,
     startDate: null,
     endDate: null,
@@ -184,6 +185,12 @@ function parseArgs(argv) {
 
     if (arg === '--mode' || arg === '--pricing-mode') {
       args.pricingMode = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--listing-check-url') {
+      args.listingCheckUrl = argv[index + 1];
       index += 1;
       continue;
     }
@@ -288,6 +295,7 @@ Options:
   --headed                Force headed browser mode
   --headless              Force headless browser mode
   --mode <name>           daily | monthly
+  --listing-check-url <url> Check if a single Airbnb listing is the lowest nearby option
   --browser <name>        chromium | chrome | firefox
   --start-date <date>     YYYY-MM-DD, monthly mode: earliest start date
   --end-date <date>       YYYY-MM-DD, monthly mode: latest start date
@@ -1032,6 +1040,285 @@ function parseCard(rawCard, stayType, monthlyStayLength) {
     priceBasis: selectedBasis,
     monthlyNightlyEquivalent,
   };
+}
+
+function extractRoomId(url) {
+  const matched = String(url || '').match(/\/rooms\/(\d+)/);
+  return matched ? matched[1] : null;
+}
+
+function withStayParams(rawUrl, checkIn, checkOut) {
+  const url = new URL(rawUrl);
+  url.searchParams.set('check_in', checkIn);
+  url.searchParams.set('check_out', checkOut);
+  url.searchParams.set('adults', '1');
+  return url.toString();
+}
+
+function extractCoordinatesFromSource(source) {
+  const text = String(source || '').replace(/\\"/g, '"');
+  const patterns = [
+    /"lat"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"lng"\s*:\s*(-?\d+(?:\.\d+)?)/,
+    /"latitude"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"longitude"\s*:\s*(-?\d+(?:\.\d+)?)/,
+    /"listingLat"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"listingLng"\s*:\s*(-?\d+(?:\.\d+)?)/,
+  ];
+
+  for (const pattern of patterns) {
+    const matched = text.match(pattern);
+    if (!matched) {
+      continue;
+    }
+    const latitude = Number.parseFloat(matched[1]);
+    const longitude = Number.parseFloat(matched[2]);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return { latitude, longitude };
+    }
+  }
+
+  return null;
+}
+
+function selectListingPagePrice(text, stayNights) {
+  const prices = parseCurrencyCandidates(text);
+  const nightlyCandidate = prices.find((candidate) => /night|每晚/.test(candidate.context));
+  const monthlyCandidate = prices.find((candidate) => /month|monthly|每月|月租/.test(candidate.context));
+  const totalCandidate = prices.find((candidate) => /total|before taxes|总价|总共/.test(candidate.context));
+  const fallbackCandidate = prices[0] || null;
+  let selectedPrice = null;
+  let selectedBasis = 'unknown';
+
+  if (monthlyCandidate) {
+    selectedPrice = monthlyCandidate;
+    selectedBasis = 'monthly';
+  } else if (totalCandidate) {
+    selectedPrice = totalCandidate;
+    selectedBasis = 'total';
+  } else if (nightlyCandidate) {
+    selectedPrice = { ...nightlyCandidate, amount: nightlyCandidate.amount * stayNights };
+    selectedBasis = 'nightly';
+  } else if (fallbackCandidate) {
+    selectedPrice = fallbackCandidate;
+    selectedBasis = 'fallback';
+  }
+
+  if (!selectedPrice) {
+    return {
+      priceForStay: null,
+      price30: null,
+      dailyAverage: null,
+      priceBasis: selectedBasis,
+    };
+  }
+
+  const priceForStay = selectedPrice.amount;
+  const dailyAverage = priceForStay / stayNights;
+
+  return {
+    priceForStay,
+    price30: dailyAverage * 30,
+    dailyAverage,
+    priceBasis: selectedBasis,
+  };
+}
+
+async function scrapeListingDetails(page, listingUrl, startDate, stayNights) {
+  const checkOut = formatIsoDate(addDays(parseIsoDate(startDate), stayNights));
+  const url = withStayParams(listingUrl, startDate, checkOut);
+  log(`Opening listing for price check ${url}`);
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await dismissPopups(page);
+  await page.mouse.wheel(0, 900);
+  await pause(1200);
+
+  const payload = await page.evaluate(() => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    const bodyText = normalize(document.body.innerText || document.body.textContent || '');
+    const scripts = Array.from(document.scripts).map((script) => script.textContent || '').join('\n');
+    const title = normalize(document.querySelector('h1')?.textContent || document.title || '');
+    return {
+      title,
+      bodyText,
+      scripts,
+      url: window.location.href,
+    };
+  });
+
+  const fullText = normalizeText(`${payload.title} ${payload.bodyText}`);
+  const coordinates = extractCoordinatesFromSource(payload.scripts) || extractCoordinatesFromSource(payload.bodyText);
+  const price = selectListingPagePrice(fullText, stayNights);
+
+  return {
+    listingUrl,
+    resolvedUrl: payload.url,
+    roomId: extractRoomId(payload.url) || extractRoomId(listingUrl),
+    title: payload.title,
+    textSnippet: fullText.slice(0, 1200),
+    coordinates,
+    propertyType: inferPropertyType(fullText),
+    roomType: inferRoomType(fullText),
+    bedrooms: parseBedrooms(fullText),
+    bathrooms: parseBathrooms(fullText),
+    ...price,
+  };
+}
+
+function roundDownToNearestFive(value) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(5, Math.floor(value / 5) * 5);
+}
+
+function selectListingCheckComparables(parsedCards, subject, stayNights) {
+  const subjectRoomId = subject.roomId;
+  const pricedCards = parsedCards
+    .filter(hasComparablePrice)
+    .filter((card) => extractRoomId(card.href) !== subjectRoomId);
+
+  return pricedCards.filter((card) => {
+    if (subject.propertyType && (!card.propertyType || card.propertyType.key !== subject.propertyType.key)) {
+      return false;
+    }
+
+    if (subject.roomType && card.roomType && card.roomType.key !== subject.roomType.key) {
+      return false;
+    }
+
+    if (Number.isFinite(subject.bedrooms) && Number.isFinite(card.bedrooms) && Math.abs(card.bedrooms - subject.bedrooms) > 1) {
+      return false;
+    }
+
+    if (Number.isFinite(subject.bathrooms) && Number.isFinite(card.bathrooms) && Math.abs(card.bathrooms - subject.bathrooms) > 0.5) {
+      return false;
+    }
+
+    return Number.isFinite(card.monthlyNightlyEquivalent)
+      ? card.monthlyNightlyEquivalent > 0
+      : card.price / stayNights > 0;
+  });
+}
+
+async function runListingCompetitivenessCheck(page, config, args) {
+  const listingUrl = args.listingCheckUrl;
+  const startDate = args.startDate || formatIsoDate(addDays(new Date(), 1));
+  const stayNights = Number.isInteger(args.monthlyStayLength) ? args.monthlyStayLength : config.monthlyStayLength;
+
+  if (!listingUrl || !/^https?:\/\/(?:www\.)?airbnb\.[a-z.]+\/rooms\/\d+/i.test(listingUrl)) {
+    fail('A valid Airbnb rooms URL is required for listing price check.');
+  }
+
+  if (!parseIsoDate(startDate)) {
+    fail('Start date must use YYYY-MM-DD.');
+  }
+
+  if (!Number.isInteger(stayNights) || stayNights < 28) {
+    fail('Minimum stay nights must be an integer >= 28.');
+  }
+
+  const subject = await scrapeListingDetails(page, listingUrl, startDate, stayNights);
+  if (!subject.coordinates) {
+    fail('Could not locate this listing on the Airbnb page. Open the listing once in a browser or provide a public listing URL with map data.');
+  }
+
+  const checkOut = formatIsoDate(addDays(parseIsoDate(startDate), stayNights));
+  const input = {
+    pricingMode: 'monthly',
+    startDate,
+    endDate: startDate,
+    address: subject.title || subject.listingUrl,
+    propertyType: subject.propertyType,
+    roomType: subject.roomType || ROOM_TYPE_ALIASES[0],
+    bedrooms: Number.isFinite(subject.bedrooms) ? subject.bedrooms : 1,
+    bathrooms: Number.isFinite(subject.bathrooms) ? subject.bathrooms : 1,
+    adults: 1,
+    maxResultsPerDate: Number.isInteger(args.maxResultsPerDate) ? args.maxResultsPerDate : Math.max(24, config.maxResultsPerDate * 2),
+    monthlyStayLength: stayNights,
+    reportDir: args.reportDir ? path.resolve(args.reportDir) : config.reportDir,
+    centerLat: subject.coordinates.latitude,
+    centerLng: subject.coordinates.longitude,
+    radiusKm: Number.isFinite(args.radiusKm) && args.radiusKm > 0 ? args.radiusKm : 5,
+    bounds: computeBoundingBox(subject.coordinates.latitude, subject.coordinates.longitude, Number.isFinite(args.radiusKm) && args.radiusKm > 0 ? args.radiusKm : 5),
+  };
+
+  log(`Checking nearby comparable listings within ${input.radiusKm} km`);
+  await navigateToSearch(page, config, {
+    address: input.address,
+    checkIn: startDate,
+    checkOut,
+    adults: input.adults,
+    bounds: input.bounds,
+  });
+
+  const rawCards = await scrapeRawCards(page, input.maxResultsPerDate);
+  const parsedCards = rawCards.map((card) => parseCard(card, 'monthly', stayNights));
+  const comparables = selectListingCheckComparables(parsedCards, subject, stayNights)
+    .sort((left, right) => left.price - right.price);
+  const stats = calcSeriesStats(comparables.map((card) => card.price));
+  const lowest = comparables[0] || null;
+  const subjectPrice30 = subject.price30;
+  const hasSubjectPrice = Number.isFinite(subjectPrice30);
+  const isLowest = hasSubjectPrice && (!lowest || subjectPrice30 <= lowest.price);
+  const targetMonthlyPrice = (!hasSubjectPrice || !isLowest) && lowest ? roundDownToNearestFive(lowest.price - 5) : subjectPrice30;
+  const targetDailyPrice = Number.isFinite(targetMonthlyPrice) ? roundCurrency(targetMonthlyPrice / 30) : null;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    checkType: 'listing-competitiveness',
+    input: {
+      listingUrl,
+      startDate,
+      checkoutDate: checkOut,
+      stayNights,
+      radiusKm: input.radiusKm,
+    },
+    subjectListing: {
+      ...subject,
+      propertyType: subject.propertyType ? subject.propertyType.display : null,
+      roomType: subject.roomType ? subject.roomType.display : null,
+    },
+    market: {
+      comparableCount: comparables.length,
+      priceStats: stats,
+      lowestComparable: lowest ? {
+        href: lowest.href,
+        price: lowest.price,
+        priceBasis: lowest.priceBasis,
+        bedrooms: lowest.bedrooms,
+        bathrooms: lowest.bathrooms,
+        propertyType: lowest.propertyType ? lowest.propertyType.display : null,
+        roomType: lowest.roomType ? lowest.roomType.display : null,
+        textSnippet: lowest.text ? String(lowest.text).slice(0, 800) : '',
+      } : null,
+      hasSubjectPrice,
+      isLowest,
+      targetMonthlyPrice,
+      targetDailyPrice,
+      recommendation: !hasSubjectPrice
+        ? (lowest
+          ? `没有从房源页识别到当前价格；如果目标是成为区域最低价，建议30晚价格不高于 ${formatMoney(targetMonthlyPrice)}，约 ${formatMoney(targetDailyPrice)} / 晚。`
+          : '没有从房源页识别到当前价格，也没有找到可用同类样本。')
+        : isLowest
+          ? '当前房源已经是附近同类房源中的最低价或没有找到更低同类竞品。'
+          : `建议将30晚价格调到 ${formatMoney(targetMonthlyPrice)}，约 ${formatMoney(targetDailyPrice)} / 晚，可低于当前最低同类竞品。`,
+    },
+    comparableListings: comparables.slice(0, 12).map((card) => ({
+      href: card.href,
+      price: card.price,
+      priceBasis: card.priceBasis,
+      bedrooms: card.bedrooms,
+      bathrooms: card.bathrooms,
+      propertyType: card.propertyType ? card.propertyType.display : null,
+      roomType: card.roomType ? card.roomType.display : null,
+      textSnippet: card.text ? String(card.text).slice(0, 800) : '',
+    })),
+  };
+}
+
+function buildListingCheckOutputPath(reportDir, subject) {
+  const timestampLabel = new Date().toISOString().replace(/[:]/g, '-');
+  const slug = slugify(`listing-check-${subject.roomId || 'airbnb'}-${subject.title || ''}`);
+  ensureDir(reportDir);
+  return path.join(reportDir, `${timestampLabel}-${slug}.json`);
 }
 
 function hasComparablePrice(card) {
@@ -2300,6 +2587,14 @@ async function main() {
   try {
     if (args.setup) {
       await runSetup(page, context, config.storageStatePath);
+      return;
+    }
+
+    if (args.listingCheckUrl) {
+      const report = await runListingCompetitivenessCheck(page, config, args);
+      const outputPath = buildListingCheckOutputPath(config.reportDir, report.subjectListing);
+      fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+      log(`Saved listing check JSON report: ${outputPath}`);
       return;
     }
 
