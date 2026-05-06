@@ -1078,46 +1078,84 @@ function extractCoordinatesFromSource(source) {
   return null;
 }
 
-function selectListingPagePrice(text, stayNights) {
-  const prices = parseCurrencyCandidates(text);
-  const nightlyCandidate = prices.find((candidate) => /night|每晚/.test(candidate.context));
-  const monthlyCandidate = prices.find((candidate) => /month|monthly|每月|月租/.test(candidate.context));
-  const totalCandidate = prices.find((candidate) => /total|before taxes|总价|总共/.test(candidate.context));
-  const fallbackCandidate = prices[0] || null;
-  let selectedPrice = null;
-  let selectedBasis = 'unknown';
+function classifyListingPriceCandidate(candidate) {
+  const context = candidate.context || '';
+  if (/month|monthly|每月|月租/.test(context)) {
+    return 'monthly';
+  }
+  if (/total|before taxes|总价|总共/.test(context)) {
+    return 'total';
+  }
+  if (/night|每晚/.test(context)) {
+    return 'nightly';
+  }
+  return 'fallback';
+}
 
-  if (monthlyCandidate) {
-    selectedPrice = monthlyCandidate;
-    selectedBasis = 'monthly';
-  } else if (totalCandidate) {
-    selectedPrice = totalCandidate;
-    selectedBasis = 'total';
-  } else if (nightlyCandidate) {
-    selectedPrice = { ...nightlyCandidate, amount: nightlyCandidate.amount * stayNights };
-    selectedBasis = 'nightly';
-  } else if (fallbackCandidate) {
-    selectedPrice = fallbackCandidate;
-    selectedBasis = 'fallback';
+function scoreListingPriceCandidate(candidate, stayNights) {
+  const context = candidate.context || '';
+  let score = 0;
+
+  if (/show price breakdown|price breakdown/.test(context)) {
+    score += 12;
+  }
+  if (/check[-\s]?in|checkout|reserve|guests?/.test(context)) {
+    score += 8;
+  }
+  if (/month|monthly|每月|月租/.test(context)) {
+    score += 6;
+  }
+  if (/total|before taxes|总价|总共/.test(context)) {
+    score += 5;
+  }
+  if (/night|每晚/.test(context)) {
+    score += 4;
+  }
+  if (/parking|deposit|cleaning|fee|pet|security|damage|wifi|utilities/.test(context)) {
+    score -= 20;
+  }
+  if (stayNights >= 28 && candidate.amount < 200 && !/night|每晚/.test(context)) {
+    score -= 10;
   }
 
-  if (!selectedPrice) {
+  return score;
+}
+
+function selectListingPagePrice(text, stayNights) {
+  const prices = parseCurrencyCandidates(text);
+  const selected = prices
+    .map((candidate) => ({
+      candidate,
+      basis: classifyListingPriceCandidate(candidate),
+      score: scoreListingPriceCandidate(candidate, stayNights),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return left.candidate.index - right.candidate.index;
+    })[0] || null;
+
+  if (!selected) {
     return {
       priceForStay: null,
       price30: null,
       dailyAverage: null,
-      priceBasis: selectedBasis,
+      priceBasis: 'unknown',
     };
   }
 
-  const priceForStay = selectedPrice.amount;
+  const priceForStay = selected.basis === 'nightly'
+    ? selected.candidate.amount * stayNights
+    : selected.candidate.amount;
   const dailyAverage = priceForStay / stayNights;
 
   return {
     priceForStay,
     price30: dailyAverage * 30,
     dailyAverage,
-    priceBasis: selectedBasis,
+    priceBasis: selected.basis,
   };
 }
 
@@ -1128,6 +1166,11 @@ async function scrapeListingDetails(page, listingUrl, startDate, stayNights) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
   await dismissPopups(page);
   await page.mouse.wheel(0, 900);
+  await page.waitForFunction(() => {
+    const text = document.body.innerText || document.body.textContent || '';
+    return /(?:CA|C)?\$\s?[\d,]+(?:\.\d{1,2})?/.test(text)
+      && /show price breakdown|price breakdown|monthly|month|night|total/i.test(text);
+  }, { timeout: 20000 }).catch(() => {});
   await pause(1200);
 
   const payload = await page.evaluate(() => {
