@@ -9,7 +9,7 @@
 - 返回日租/月租价格图
 - 输出最高价、最低价、平均价、中位数
 - 给出每日建议挂牌价和调价建议
-- 支持基于 Google Maps Places API 的地址自动建议和坐标定位
+- 支持基于 OpenStreetMap / Photon 的低成本地址自动建议和坐标定位（默认不需要 API key）
 
 ## 本地运行
 
@@ -40,11 +40,11 @@
 
 - `AIRBNB_STORAGE_STATE_JSON`
 - `AIRBNB_STORAGE_STATE_BASE64`
-- `GOOGLE_MAPS_API_KEY`
+- `PHOTON_ENDPOINT`
 
 说明：
 
-- 地址自动建议走 Google Maps Places API（Autocomplete New + Place Details New），需要启用 Google Maps Platform 的 Places API 并配置 `GOOGLE_MAPS_API_KEY`。
+- 地址自动建议默认走 [Photon](https://photon.komoot.io) / OpenStreetMap，不需要 Google Maps API key。`PHOTON_ENDPOINT` 可选，只有在你未来想换成自建 Photon 服务时才需要配置。
 - `AIRBNB_STORAGE_STATE_JSON`：部署环境可直接注入 Airbnb storage state JSON
 - `AIRBNB_STORAGE_STATE_BASE64`：如果不方便直接放 JSON，可用 base64 注入
 

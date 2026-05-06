@@ -146,12 +146,12 @@ const copy = {
     minStayNights: "月租晚数",
     address: "房源地址",
     addressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
-    addressHint: "输入时会出现 Google Maps 地址建议，选中后自动回填并定位。",
-    addressVerified: "已选中 Google Maps 地址（将把 Airbnb 搜索限定在该点 2 km 范围内）",
-    addressSuggesting: "正在获取 Google Maps 地址建议...",
+    addressHint: "输入时会出现地址建议（OpenStreetMap），选中后自动回填并定位。",
+    addressVerified: "已选中地址（将把 Airbnb 搜索限定在该点 2 km 范围内）",
+    addressSuggesting: "正在获取地址建议...",
     addressSelectPrompt: "请选择一条建议地址，能提高查价准确度。",
-    addressAutocompleteUnavailable: "Google Maps 地址建议暂时不可用，可直接输入完整地址后继续。",
-    poweredByGoogle: "Powered by Google Maps",
+    addressAutocompleteUnavailable: "地址建议暂时不可用，可直接输入完整地址后继续。",
+    poweredByGoogle: "Powered by OpenStreetMap / Photon",
     progressTitle: "执行进度",
     progressRunning: "系统正在抓取房价与生成报告，请稍候。",
     progressIdle: "提交后会在这里显示执行状态，帮助客户确认系统仍在运行。",
@@ -259,12 +259,12 @@ const copy = {
     minStayNights: "Monthly nights",
     address: "Address",
     addressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
-    addressHint: "Google Maps address suggestions appear while typing. Selecting one fills in the address and pins its location.",
-    addressVerified: "Google Maps address pinned — Airbnb search will be restricted to a 2 km radius around it",
-    addressSuggesting: "Loading Google Maps address suggestions...",
+    addressHint: "Address suggestions (OpenStreetMap) appear while typing. Selecting one fills in the address and pins its location.",
+    addressVerified: "Address pinned — Airbnb search will be restricted to a 2 km radius around it",
+    addressSuggesting: "Loading address suggestions...",
     addressSelectPrompt: "Select a suggested address to improve lookup accuracy.",
-    addressAutocompleteUnavailable: "Google Maps address suggestions are temporarily unavailable. You can still type the full address manually.",
-    poweredByGoogle: "Powered by Google Maps",
+    addressAutocompleteUnavailable: "Address suggestions are temporarily unavailable. You can still type the full address manually.",
+    poweredByGoogle: "Powered by OpenStreetMap / Photon",
     progressTitle: "Progress",
     progressRunning: "The system is fetching prices and generating the report. Please wait.",
     progressIdle: "Execution status will appear here after submission so customers know the system is still running.",
@@ -995,50 +995,22 @@ export function MarketDashboard() {
     };
   }, [addressFocused, addressSessionToken, form.address, locale]);
 
-  async function selectAddressSuggestion(suggestion: AddressSuggestion) {
+  function selectAddressSuggestion(suggestion: AddressSuggestion) {
     setAddressFocused(false);
     setAddressSuggestions([]);
 
-    let resolvedSuggestion = suggestion;
-
-    if (
-      suggestion.placeId &&
-      (typeof suggestion.latitude !== "number" || typeof suggestion.longitude !== "number")
-    ) {
-      try {
-        setAddressLoading(true);
-        const response = await fetch(
-          `/api/address-details?placeId=${encodeURIComponent(suggestion.placeId)}&locale=${locale}&sessionToken=${encodeURIComponent(addressSessionToken)}`,
-        );
-        const payload = (await response.json().catch(() => null)) as
-          | { suggestion?: AddressSuggestion; error?: string }
-          | null;
-
-        if (response.ok && payload?.suggestion) {
-          resolvedSuggestion = {
-            ...suggestion,
-            ...payload.suggestion,
-          };
-        }
-      } catch {
-        // Keep the selected prediction text even if details lookup fails.
-      } finally {
-        setAddressLoading(false);
-      }
-    }
-
-    const resolvedAddress = resolvedSuggestion.formattedAddress || resolvedSuggestion.text;
+    const resolvedAddress = suggestion.formattedAddress || suggestion.text;
 
     setAddressAutocompleteStatus("ready");
     setAddressVerified(Boolean(resolvedAddress));
 
     if (
-      typeof resolvedSuggestion.latitude === "number" &&
-      typeof resolvedSuggestion.longitude === "number"
+      typeof suggestion.latitude === "number" &&
+      typeof suggestion.longitude === "number"
     ) {
       setAddressLocation({
-        latitude: resolvedSuggestion.latitude,
-        longitude: resolvedSuggestion.longitude,
+        latitude: suggestion.latitude,
+        longitude: suggestion.longitude,
       });
     } else {
       setAddressLocation(null);
@@ -1416,7 +1388,7 @@ export function MarketDashboard() {
                         type="button"
                         onMouseDown={(event) => {
                           event.preventDefault();
-                          void selectAddressSuggestion(suggestion);
+                          selectAddressSuggestion(suggestion);
                         }}
                         className="flex w-full items-start justify-between gap-3 border-t border-[#f6ece8] px-3 py-2 text-left first:border-t-0 hover:bg-[#fff6f4]"
                       >
