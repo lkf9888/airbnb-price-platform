@@ -20,6 +20,9 @@ function resolveContentType(name: string) {
   if (name.toLowerCase().endsWith(".png")) {
     return "image/png";
   }
+  if (name.toLowerCase().endsWith(".pdf")) {
+    return "application/pdf";
+  }
   return "application/octet-stream";
 }
 
@@ -30,7 +33,7 @@ export async function GET(
   const { name } = await params;
   const decoded = decodeURIComponent(name);
 
-  if (!/^[A-Za-z0-9._-]+\.(html|json|png)$/i.test(decoded)) {
+  if (!/^[\p{L}\p{N}._-]+\.(html|json|png|pdf)$/iu.test(decoded)) {
     return NextResponse.json({ error: "Invalid report name." }, { status: 400 });
   }
 

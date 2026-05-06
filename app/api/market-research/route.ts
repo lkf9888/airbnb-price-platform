@@ -107,6 +107,15 @@ function extractReportPath(output: string) {
   return matched ? matched[1].trim() : null;
 }
 
+async function fileExists(filePath: string) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function extractDiagnosticUrls(output: string) {
   const names = new Set<string>();
 
@@ -171,25 +180,24 @@ export async function POST(request: Request) {
 
   const startMs = Date.parse(input.startDate);
   const endMs = Date.parse(input.endDate);
-  const spanNights = Number.isFinite(startMs) && Number.isFinite(endMs)
+  const spanDays = Number.isFinite(startMs) && Number.isFinite(endMs)
     ? Math.round((endMs - startMs) / (24 * 3600 * 1000))
     : NaN;
 
-  if (!Number.isFinite(spanNights) || spanNights < 0) {
-    return NextResponse.json(
-      { error: message(locale, "结束日期必须晚于或等于开始日期。", "End date must be on or after start date.") },
-      { status: 400 },
-    );
-  }
-
-  if (input.pricingMode === "monthly" && spanNights < input.monthlyStayLength) {
+  if (!Number.isFinite(spanDays) || spanDays < 0) {
     return NextResponse.json(
       {
-        error: message(
-          locale,
-          `月租模式至少需要 ${input.monthlyStayLength} 晚的日期范围。`,
-          `Monthly mode needs at least ${input.monthlyStayLength} nights between start and end date.`,
-        ),
+        error: input.pricingMode === "monthly"
+          ? message(
+              locale,
+              "最晚起租日必须晚于或等于最早起租日。",
+              "Latest start date must be on or after earliest start date.",
+            )
+          : message(
+              locale,
+              "结束日期必须晚于或等于开始日期。",
+              "End date must be on or after start date.",
+            ),
       },
       { status: 400 },
     );
@@ -233,9 +241,7 @@ export async function POST(request: Request) {
   const jobId = randomUUID();
   const startedAt = new Date().toISOString();
 
-  const totalDays = input.pricingMode === "monthly"
-    ? Math.max(0, spanNights - input.monthlyStayLength + 1)
-    : spanNights + 1;
+  const totalDays = spanDays + 1;
 
   let completedDays = 0;
   let currentDate: string | null = null;
@@ -330,6 +336,9 @@ export async function POST(request: Request) {
         const report = JSON.parse(await fs.readFile(jsonPath, "utf8"));
         const jsonFileName = path.basename(jsonPath);
         const htmlFileName = jsonFileName.replace(/\.json$/i, ".html");
+        const pdfPath = jsonPath.replace(/\.json$/i, ".pdf");
+        const pdfFileName = jsonFileName.replace(/\.json$/i, ".pdf");
+        const hasPdf = await fileExists(pdfPath);
 
         await writeJobState(jobId, {
           jobId,
@@ -339,8 +348,10 @@ export async function POST(request: Request) {
           report,
           savedJsonPath: jsonPath,
           savedHtmlPath: jsonPath.replace(/\.json$/i, ".html"),
+          ...(hasPdf ? { savedPdfPath: pdfPath } : {}),
           reportJsonUrl: `/api/reports/${encodeURIComponent(jsonFileName)}`,
           reportHtmlUrl: `/api/reports/${encodeURIComponent(htmlFileName)}`,
+          ...(hasPdf ? { reportPdfUrl: `/api/reports/${encodeURIComponent(pdfFileName)}` } : {}),
           stdout: stdoutBuf,
           stderr: stderrBuf,
         });
