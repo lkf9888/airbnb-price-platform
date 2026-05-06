@@ -173,16 +173,19 @@ const copy = {
     similarAddressMatch: "地址相关性",
     similarAddressMatched: "与输入地址更相关",
     similarAddressApprox: "仅结构相近，不保证最近",
-    propertyType: "物业类型",
-    anyPropertyType: "不限",
+    propertyType: "建筑/物业类型",
+    propertyTypeHint: "用于筛选可比房源的建筑或空间形态，例如公寓、独立屋、套房。",
+    anyPropertyType: "不限建筑类型",
     apartment: "公寓",
     townhouse: "联排",
     house: "独立屋",
-    suite: "套房",
-    roomType: "房型",
-    entireHome: "整套房源",
-    privateRoom: "独立房间",
-    sharedRoom: "合住房间",
+    suite: "套房 / Guest suite",
+    roomType: "出租方式",
+    roomTypeHint: "对应 Airbnb 的 room type：整套出租、独立房间、合住房间或酒店房间。",
+    typeCombinationHint: "组合示例：独立屋 + 独立房间 = 独立屋里的单间；套房 + 独立房间 = guest suite / suite 里的单间。系统先按两个条件筛选，可比样本不足时会逐级放宽。",
+    entireHome: "整套房源（整套出租）",
+    privateRoom: "独立房间（单间出租）",
+    sharedRoom: "合住房间（共享睡眠空间）",
     hotelRoom: "酒店房间",
     bedrooms: "卧室数量",
     bathrooms: "卫生间数量",
@@ -291,14 +294,17 @@ const copy = {
     similarAddressMatch: "Address relevance",
     similarAddressMatched: "More related to your input area",
     similarAddressApprox: "Structurally similar only, not guaranteed nearest",
-    propertyType: "Property type",
-    anyPropertyType: "Any",
+    propertyType: "Building / property type",
+    propertyTypeHint: "Used to filter comparable listings by building or space type, such as apartment, house, or guest suite.",
+    anyPropertyType: "Any building type",
     apartment: "Apartment",
     townhouse: "Townhouse",
     house: "House",
-    suite: "Suite",
-    roomType: "Room type",
-    entireHome: "Entire home",
+    suite: "Suite / Guest suite",
+    roomType: "Rental arrangement",
+    roomTypeHint: "Maps to Airbnb room type: entire place, private room, shared room, or hotel room.",
+    typeCombinationHint: "Examples: House + private room means a private room inside a house; Suite + private room means a private room inside a guest suite/suite. The system starts with both filters and relaxes them if there are not enough comparable listings.",
+    entireHome: "Entire place",
     privateRoom: "Private room",
     sharedRoom: "Shared room",
     hotelRoom: "Hotel room",
@@ -1458,6 +1464,7 @@ export function MarketDashboard() {
                 <option value="独立屋">{t.house}</option>
                 <option value="套房">{t.suite}</option>
               </select>
+              <span className="block text-[11px] leading-4 text-[var(--muted)]">{t.propertyTypeHint}</span>
             </label>
             <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">{t.roomType}</span>
@@ -1471,7 +1478,11 @@ export function MarketDashboard() {
                 <option value="合住房间">{t.sharedRoom}</option>
                 <option value="酒店房间">{t.hotelRoom}</option>
               </select>
+              <span className="block text-[11px] leading-4 text-[var(--muted)]">{t.roomTypeHint}</span>
             </label>
+            <div className="md:col-span-2 xl:col-span-3 rounded-lg border border-[#f2d4dc] bg-[#fff6f8] px-3 py-2 text-[11px] leading-4 text-[var(--muted)]">
+              {t.typeCombinationHint}
+            </div>
             <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--muted)]">{t.bedrooms}</span>
               <input
