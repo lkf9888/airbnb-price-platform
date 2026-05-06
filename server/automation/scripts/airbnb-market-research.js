@@ -302,7 +302,7 @@ Options:
   --report-dir <path>     Output folder for html/json report
   --center-lat <number>   Center latitude for map-bounded search
   --center-lng <number>   Center longitude for map-bounded search
-  --radius-km <number>    Bounding box radius in km (default 2)
+  --radius-km <number>    Bounding box radius in km (default 5)
   --help, -h              Show this message
 `);
 }
@@ -579,7 +579,7 @@ async function collectResearchInput(args, config) {
 
   const centerLat = Number.isFinite(args.centerLat) ? args.centerLat : null;
   const centerLng = Number.isFinite(args.centerLng) ? args.centerLng : null;
-  const radiusKm = Number.isFinite(args.radiusKm) && args.radiusKm > 0 ? args.radiusKm : 2;
+  const radiusKm = Number.isFinite(args.radiusKm) && args.radiusKm > 0 ? args.radiusKm : 5;
   const bounds = centerLat !== null && centerLng !== null
     ? computeBoundingBox(centerLat, centerLng, radiusKm)
     : null;
@@ -1046,6 +1046,14 @@ function matchesExactPropertyType(card, propertyType) {
   return Boolean(propertyType && card.propertyType && card.propertyType.key === propertyType.key);
 }
 
+function matchesCompatiblePropertyType(card, propertyType) {
+  return !propertyType || !card.propertyType || card.propertyType.key === propertyType.key;
+}
+
+function matchesCompatibleRoomType(card, roomType) {
+  return !roomType || !card.roomType || card.roomType.key === roomType.key;
+}
+
 function bathroomCloseEnough(cardBathrooms, wantedBathrooms, tolerance = 0.25) {
   return Number.isFinite(cardBathrooms) && Math.abs(cardBathrooms - wantedBathrooms) <= tolerance;
 }
@@ -1054,6 +1062,15 @@ function selectComparables(parsedCards, wanted) {
   const pricedCards = parsedCards.filter(hasComparablePrice);
   if (!pricedCards.length) {
     return { cards: [], matchLabel: '没有抓到可用价格' };
+  }
+
+  const comparablePool = pricedCards.filter((card) => (
+    matchesCompatiblePropertyType(card, wanted.propertyType)
+    && matchesCompatibleRoomType(card, wanted.roomType)
+  ));
+
+  if (!comparablePool.length) {
+    return { cards: [], matchLabel: '没有符合所选建筑/出租方式的可比房源' };
   }
 
   const matchLevels = [];
@@ -1134,7 +1151,7 @@ function selectComparables(parsedCards, wanted) {
   let bestNonEmpty = null;
 
   for (const level of matchLevels) {
-    const cards = pricedCards.filter(level.filter);
+    const cards = comparablePool.filter(level.filter);
     if (cards.length && !bestNonEmpty) {
       bestNonEmpty = { cards, matchLabel: level.label };
     }
@@ -1144,8 +1161,8 @@ function selectComparables(parsedCards, wanted) {
   }
 
   return bestNonEmpty || {
-    cards: pricedCards,
-    matchLabel: '使用当前页全部可用价格',
+    cards: comparablePool,
+    matchLabel: '使用符合所选建筑/出租方式的可用价格',
   };
 }
 

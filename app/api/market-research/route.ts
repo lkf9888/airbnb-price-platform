@@ -15,6 +15,15 @@ const rateLimitBuckets = new Map<string, number[]>();
 
 const STALE_RUNNING_MS = 45 * 60 * 1000;
 const STALE_HEARTBEAT_MS = 8 * 60 * 1000;
+const DEFAULT_SEARCH_RADIUS_KM = 5;
+const PHOTON_ENDPOINT = process.env.PHOTON_ENDPOINT?.trim() || "https://photon.komoot.io/api/";
+const USER_AGENT = "airbnb-price-platform/1.0 (https://github.com/lkf9888/airbnb-price-platform)";
+
+type PhotonFeature = {
+  geometry?: {
+    coordinates?: [number, number];
+  };
+};
 
 function clientIp(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -148,6 +157,42 @@ async function ensureAirbnbStorageState() {
   await fs.writeFile(targetPath, rawJson, "utf8");
 }
 
+async function geocodeAddress(address: string) {
+  try {
+    const photonUrl = new URL(PHOTON_ENDPOINT);
+    photonUrl.searchParams.set("q", address);
+    photonUrl.searchParams.set("limit", "1");
+    photonUrl.searchParams.set("lang", "en");
+
+    const response = await fetch(photonUrl, {
+      method: "GET",
+      headers: {
+        "user-agent": USER_AGENT,
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json().catch(() => null)) as { features?: PhotonFeature[] } | null;
+    const coordinates = payload?.features?.[0]?.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+      return null;
+    }
+
+    const [longitude, latitude] = coordinates;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return null;
+    }
+
+    return { latitude, longitude };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = requestSchema.safeParse(body);
@@ -176,7 +221,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const input = parsed.data;
+  let input = parsed.data;
 
   const startMs = Date.parse(input.startDate);
   const endMs = Date.parse(input.endDate);
@@ -201,6 +246,23 @@ export async function POST(request: Request) {
       },
       { status: 400 },
     );
+  }
+
+  if (typeof input.centerLat !== "number" || typeof input.centerLng !== "number") {
+    const location = await geocodeAddress(input.address);
+    if (location) {
+      input = {
+        ...input,
+        centerLat: location.latitude,
+        centerLng: location.longitude,
+        radiusKm: input.radiusKm ?? DEFAULT_SEARCH_RADIUS_KM,
+      };
+    }
+  } else if (typeof input.radiusKm !== "number") {
+    input = {
+      ...input,
+      radiusKm: DEFAULT_SEARCH_RADIUS_KM,
+    };
   }
 
   await ensureAirbnbStorageState();

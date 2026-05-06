@@ -149,7 +149,7 @@ const copy = {
     address: "房源地址",
     addressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
     addressHint: "输入时会出现地址建议（OpenStreetMap），选中后自动回填并定位。",
-    addressVerified: "已选中地址（将把 Airbnb 搜索限定在该点 2 km 范围内）",
+    addressVerified: "已选中地址（将把 Airbnb 搜索限定在该点 5 km 范围内）",
     addressSuggesting: "正在获取地址建议...",
     addressSelectPrompt: "请选择一条建议地址，能提高查价准确度。",
     addressAutocompleteUnavailable: "地址建议暂时不可用，可直接输入完整地址后继续。",
@@ -270,7 +270,7 @@ const copy = {
     address: "Address",
     addressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
     addressHint: "Address suggestions (OpenStreetMap) appear while typing. Selecting one fills in the address and pins its location.",
-    addressVerified: "Address pinned — Airbnb search will be restricted to a 2 km radius around it",
+    addressVerified: "Address pinned — Airbnb search will be restricted to a 5 km radius around it",
     addressSuggesting: "Loading address suggestions...",
     addressSelectPrompt: "Select a suggested address to improve lookup accuracy.",
     addressAutocompleteUnavailable: "Address suggestions are temporarily unavailable. You can still type the full address manually.",
@@ -675,6 +675,19 @@ function listingStructureScore(listing: ComparableListing, input: Report["input"
   return score;
 }
 
+function listingMatchesRequestedTypes(listing: ComparableListing, input: Report["input"]) {
+  if (input.propertyType?.display) {
+    return listing.propertyType === input.propertyType.display
+      && (!listing.roomType || listing.roomType === input.roomType.display);
+  }
+
+  if (listing.roomType && listing.roomType !== input.roomType.display) {
+    return false;
+  }
+
+  return true;
+}
+
 function buildSuggestedListings(rows: Report["rows"], input: Report["input"]) {
   const tokens = addressTokens(input.address);
   const merged = new Map<
@@ -684,7 +697,7 @@ function buildSuggestedListings(rows: Report["rows"], input: Report["input"]) {
 
   for (const row of rows) {
     for (const listing of row.daily?.sampleListings || []) {
-      if (!listing.href) {
+      if (!listing.href || !listingMatchesRequestedTypes(listing, input)) {
         continue;
       }
 
@@ -716,7 +729,7 @@ function buildSuggestedListings(rows: Report["rows"], input: Report["input"]) {
     }
 
     for (const listing of row.monthly?.sampleListings || []) {
-      if (!listing.href) {
+      if (!listing.href || !listingMatchesRequestedTypes(listing, input)) {
         continue;
       }
 
@@ -1128,7 +1141,7 @@ export function MarketDashboard() {
             ? {
                 centerLat: addressLocation.latitude,
                 centerLng: addressLocation.longitude,
-                radiusKm: 2,
+                radiusKm: 5,
               }
             : {}),
         }),
