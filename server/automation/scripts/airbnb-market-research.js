@@ -289,8 +289,8 @@ Options:
   --headless              Force headless browser mode
   --mode <name>           daily | monthly
   --browser <name>        chromium | chrome | firefox
-  --start-date <date>     YYYY-MM-DD
-  --end-date <date>       YYYY-MM-DD
+  --start-date <date>     YYYY-MM-DD, monthly mode: earliest start date
+  --end-date <date>       YYYY-MM-DD, monthly mode: latest start date
   --address <text>        Search address or neighborhood
   --property-type <text>  公寓 | 联排 | 独立屋 | 套房
   --room-type <text>      整套房源 | 独立房间 | 合住房间 | 酒店房间
@@ -619,13 +619,6 @@ function validateResearchInput(input) {
   const spanDays = enumerateDates(input.startDate, input.endDate).length;
   if (spanDays > MAX_DATE_SPAN_DAYS) {
     fail(`Date range is too large (${spanDays} days). Keep it within ${MAX_DATE_SPAN_DAYS} days per run.`);
-  }
-
-  if (input.pricingMode === 'monthly') {
-    const availableNights = Math.round((end.getTime() - start.getTime()) / (24 * 3600 * 1000));
-    if (availableNights < input.monthlyStayLength) {
-      fail(`Monthly mode needs at least ${input.monthlyStayLength} nights between start date and end date.`);
-    }
   }
 
   if (!normalizeText(input.address)) {
@@ -1629,6 +1622,285 @@ function renderMonthlyPricingPlanRows(rows) {
   `).join('');
 }
 
+function planStats(rows, key) {
+  return calcSeriesStats(rows.map((row) => row[key]));
+}
+
+function renderCompactStat(label, value, hint = '') {
+  return `
+    <div class="metric">
+      <div class="metric-label">${escapeHtml(label)}</div>
+      <div class="metric-value">${escapeHtml(value)}</div>
+      ${hint ? `<div class="metric-hint">${escapeHtml(hint)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderCompactPlanRows(rows, isMonthlyMode) {
+  if (!rows.length) {
+    return '<tr><td colspan="8">暂无可用价格建议</td></tr>';
+  }
+
+  return rows.map((row) => isMonthlyMode
+    ? `
+      <tr>
+        <td>${escapeHtml(row.date)}</td>
+        <td>${escapeHtml(row.checkoutDate)}</td>
+        <td>${escapeHtml(formatMoney(row.marketP25))}</td>
+        <td>${escapeHtml(formatMoney(row.marketMedian))}</td>
+        <td>${escapeHtml(formatMoney(row.suggestedDailyPrice))}</td>
+        <td>${escapeHtml(formatMoney(row.suggestedMonthlyPrice))}</td>
+        <td>${escapeHtml(String(row.comparableCount))}</td>
+        <td>${escapeHtml(row.confidence)}</td>
+      </tr>
+    `
+    : `
+      <tr>
+        <td>${escapeHtml(row.date)}</td>
+        <td>${escapeHtml(formatMoney(row.marketP25))}</td>
+        <td>${escapeHtml(formatMoney(row.marketMedian))}</td>
+        <td>${escapeHtml(formatMoney(row.suggestedListPrice))}</td>
+        <td>${escapeHtml(formatMoney(row.suggestedMinimumPrice))}</td>
+        <td>${escapeHtml(String(row.comparableCount))}</td>
+        <td>${escapeHtml(row.competitionLevel || '-')}</td>
+        <td>${escapeHtml(row.confidence)}</td>
+      </tr>
+    `).join('');
+}
+
+function collectCompactListings(rows, stayType, limit = 6) {
+  const seen = new Map();
+
+  for (const row of rows) {
+    const section = row[stayType];
+    for (const listing of section && section.sampleListings ? section.sampleListings : []) {
+      if (!listing.href || seen.has(listing.href)) {
+        continue;
+      }
+      seen.set(listing.href, {
+        ...listing,
+        firstDate: row.date,
+      });
+      if (seen.size >= limit) {
+        return Array.from(seen.values());
+      }
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+function renderCompactListingRows(listings) {
+  if (!listings.length) {
+    return '<tr><td colspan="6">暂无可展示的样本房源</td></tr>';
+  }
+
+  return listings.map((listing) => `
+    <tr>
+      <td>${escapeHtml(listing.firstDate)}</td>
+      <td>${escapeHtml(formatMoney(listing.price))}</td>
+      <td>${escapeHtml([listing.propertyType, listing.roomType].filter(Boolean).join(' / ') || '-')}</td>
+      <td>${escapeHtml(Number.isFinite(listing.bedrooms) ? String(listing.bedrooms) : '-')}</td>
+      <td>${escapeHtml(Number.isFinite(listing.bathrooms) ? String(listing.bathrooms) : '-')}</td>
+      <td class="listing-text">${escapeHtml(listing.textSnippet || listing.href)}</td>
+    </tr>
+  `).join('');
+}
+
+function buildPdfReportHtml(report) {
+  const isMonthlyMode = report.pricingMode === 'monthly';
+  const activeStayType = isMonthlyMode ? 'monthly' : 'daily';
+  const planRows = isMonthlyMode ? (report.monthlyPricingPlan || []) : (report.dailyPricingPlan || []);
+  const overall = buildOverallStats(report.rows, activeStayType, 'median');
+  const suggested = planStats(planRows, isMonthlyMode ? 'suggestedMonthlyPrice' : 'suggestedListPrice');
+  const suggestedDaily = isMonthlyMode ? planStats(planRows, 'suggestedDailyPrice') : null;
+  const marketMedian = planStats(planRows, 'marketMedian') || overall;
+  const marketP25 = planStats(planRows, 'marketP25');
+  const generatedAt = new Date().toLocaleString('zh-CN', { timeZone: report.config.timezone });
+  const compactListings = collectCompactListings(report.rows, activeStayType);
+  const dateLabel = isMonthlyMode ? '起租日范围' : '日期范围';
+  const planTitle = isMonthlyMode ? '月租价格建议' : '短租每日价格建议';
+  const chartTitle = isMonthlyMode ? '30晚月租均价趋势' : '短租每日均价趋势';
+  const chartColor = isMonthlyMode ? '#b32572' : '#ff385c';
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Airbnb 定价 PDF 报告</title>
+  <style>
+    @page { size: Letter landscape; margin: 0.25in; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #241c1d;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 9px;
+      line-height: 1.25;
+      background: #fffaf8;
+    }
+    main { width: 100%; }
+    .topbar {
+      display: grid;
+      grid-template-columns: 1.55fr 1fr;
+      gap: 8px;
+      align-items: start;
+      padding-bottom: 7px;
+      border-bottom: 1px solid #ead8d1;
+    }
+    h1 { margin: 0 0 4px; font-size: 19px; letter-spacing: 0; }
+    h2 { margin: 0 0 5px; font-size: 11px; }
+    .muted { color: #765f5f; }
+    .address { margin-top: 2px; font-size: 10px; font-weight: 700; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 5px;
+    }
+    .metric {
+      border: 1px solid #ead8d1;
+      border-radius: 6px;
+      padding: 5px 6px;
+      background: #fff;
+      min-height: 42px;
+    }
+    .metric-label { color: #765f5f; font-size: 7.5px; }
+    .metric-value { margin-top: 1px; color: #ff385c; font-size: 14px; font-weight: 800; }
+    .metric-hint { margin-top: 1px; color: #9c8585; font-size: 7px; }
+    .section {
+      margin-top: 7px;
+      border: 1px solid #ead8d1;
+      border-radius: 7px;
+      background: #fff;
+      padding: 7px;
+      break-inside: avoid;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 0.86fr;
+      gap: 7px;
+    }
+    .chart-block {
+      border: 1px solid #f0ded8;
+      border-radius: 6px;
+      padding: 5px;
+      margin-top: 0;
+      background: #fffdfc;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 1px;
+    }
+    .chart-header h3 { margin: 0; font-size: 9px; }
+    .chart-legend { display: flex; gap: 7px; color: #765f5f; font-size: 7px; }
+    .chart-legend i {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      margin-right: 3px;
+      vertical-align: -1px;
+    }
+    .chart-svg { width: 100%; height: 175px; display: block; }
+    .axis { stroke: #bca7a0; stroke-width: 1; }
+    .guide { stroke-width: 1.2; stroke-dasharray: 5 5; }
+    .avg-line { stroke: #ffb020; }
+    .median-line { stroke: #7c3aed; }
+    .axis-label, .guide-label, .point-label { font-size: 11px; fill: #5e4b4b; }
+    .recommendations {
+      margin: 0;
+      padding-left: 14px;
+      display: grid;
+      gap: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 7.5px;
+    }
+    th, td {
+      border-bottom: 1px solid #f0ded8;
+      padding: 3px 4px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #6c5555;
+      background: #fff3f4;
+      font-weight: 800;
+    }
+    tr { break-inside: avoid; }
+    .listing-text {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .footer {
+      margin-top: 5px;
+      color: #8d7474;
+      font-size: 7px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="topbar">
+      <div>
+        <h1>Airbnb ${escapeHtml(isMonthlyMode ? '月租' : '短租')}定价报告</h1>
+        <div class="muted">生成时间：${escapeHtml(generatedAt)} · ${escapeHtml(dateLabel)}：${escapeHtml(report.input.startDate)} 到 ${escapeHtml(report.input.endDate)} · ${escapeHtml(String(report.rows.length))} 个${escapeHtml(isMonthlyMode ? '起租日' : '日期')}</div>
+        <div class="address">${escapeHtml(report.input.address)}</div>
+        <div class="muted">${escapeHtml(report.input.propertyType ? `${report.input.propertyType.display} / ${report.input.roomType.display}` : report.input.roomType.display)} · ${escapeHtml(String(report.input.bedrooms))} 卧 · ${escapeHtml(String(report.input.bathrooms))} 卫 · ${escapeHtml(isMonthlyMode ? `月租窗口 ${report.input.monthlyStayLength || report.config.monthlyStayLength} 晚` : '逐日短租查询')}</div>
+      </div>
+      <div class="summary-grid">
+        ${renderCompactStat(isMonthlyMode ? '建议30晚月租' : '建议挂牌价', suggested ? formatMoney(suggested.median) : 'N/A', isMonthlyMode && suggestedDaily ? `${formatMoney(suggestedDaily.median)} / 晚` : '中位建议')}
+        ${renderCompactStat('市场中位数', marketMedian ? formatMoney(marketMedian.median) : 'N/A', '可比样本中位')}
+        ${renderCompactStat('P25低位价', marketP25 ? formatMoney(marketP25.median) : 'N/A', '低价竞争参考')}
+        ${renderCompactStat('平均样本数', avgComparableCount(report.rows, activeStayType).toFixed(1), `每个${isMonthlyMode ? '起租日' : '日期'}`)}
+      </div>
+    </section>
+
+    <section class="section two-col">
+      ${renderChartSvg(report.rows, activeStayType, chartTitle, chartColor)}
+      <div>
+        <h2>核心建议</h2>
+        <ol class="recommendations">
+          ${report.recommendations.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ol>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>${escapeHtml(planTitle)}</h2>
+      <table>
+        <thead>
+          ${isMonthlyMode
+            ? `<tr><th>起租日</th><th>退房日</th><th>P25</th><th>市场中位</th><th>建议日价</th><th>建议30晚</th><th>样本</th><th>置信度</th></tr>`
+            : `<tr><th>日期</th><th>P25</th><th>市场中位</th><th>建议挂牌</th><th>建议底价</th><th>样本</th><th>竞争</th><th>置信度</th></tr>`}
+        </thead>
+        <tbody>${renderCompactPlanRows(planRows, isMonthlyMode)}</tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>代表性可比房源样本</h2>
+      <table>
+        <thead>
+          <tr><th>日期</th><th>价格</th><th>类型</th><th>卧</th><th>卫</th><th>房源摘要</th></tr>
+        </thead>
+        <tbody>${renderCompactListingRows(compactListings)}</tbody>
+      </table>
+      <div class="footer">价格来自 Airbnb 当前公开搜索结果。若样本不足，系统会逐级放宽匹配条件；完整明细请查看 HTML/JSON 报告。</div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
 function buildHtmlReport(report) {
   const dailyOverall = buildOverallStats(report.rows, 'daily', 'median');
   const monthlyOverall = buildOverallStats(report.rows, 'monthly', 'median');
@@ -1912,7 +2184,29 @@ function buildOutputPaths(input) {
   return {
     htmlPath: path.join(input.reportDir, `${baseName}.html`),
     jsonPath: path.join(input.reportDir, `${baseName}.json`),
+    pdfPath: path.join(input.reportDir, `${baseName}.pdf`),
   };
+}
+
+async function writePdfReport(page, html, pdfPath) {
+  if (typeof page.pdf !== 'function') {
+    throw new Error('PDF export requires Chromium.');
+  }
+
+  await page.setContent(html, { waitUntil: 'load' });
+  await page.emulateMedia({ media: 'print' });
+  await page.pdf({
+    path: pdfPath,
+    format: 'Letter',
+    landscape: true,
+    printBackground: true,
+    margin: {
+      top: '0.25in',
+      right: '0.25in',
+      bottom: '0.25in',
+      left: '0.25in',
+    },
+  });
 }
 
 async function runSingleSearch(page, config, input, date, stayType) {
@@ -1939,10 +2233,7 @@ async function runSingleSearch(page, config, input, date, stayType) {
 }
 
 async function runResearch(page, config, input) {
-  const allDates = enumerateDates(input.startDate, input.endDate);
-  const dates = input.pricingMode === 'monthly'
-    ? allDates.filter((date) => addDays(parseIsoDate(date), input.monthlyStayLength).getTime() <= parseIsoDate(input.endDate).getTime())
-    : allDates;
+  const dates = enumerateDates(input.startDate, input.endDate);
   const rows = [];
 
   for (const date of dates) {
@@ -2012,10 +2303,22 @@ async function main() {
       output,
     };
     const html = buildHtmlReport(report);
+    let pdfGenerated = false;
+
+    try {
+      await writePdfReport(page, buildPdfReportHtml(report), output.pdfPath);
+      pdfGenerated = true;
+    } catch (error) {
+      log(`PDF report skipped: ${error.message}`);
+      delete report.output.pdfPath;
+    }
 
     fs.writeFileSync(output.jsonPath, JSON.stringify(report, null, 2));
     fs.writeFileSync(output.htmlPath, html, 'utf8');
 
+    if (pdfGenerated) {
+      log(`Saved PDF report: ${output.pdfPath}`);
+    }
     log(`Saved JSON report: ${output.jsonPath}`);
     log(`Saved HTML report: ${output.htmlPath}`);
   } finally {

@@ -101,8 +101,10 @@ type ApiResponse = {
   report: Report;
   savedJsonPath: string;
   savedHtmlPath: string;
+  savedPdfPath?: string;
   reportJsonUrl?: string;
   reportHtmlUrl?: string;
+  reportPdfUrl?: string;
   stdout: string;
   stderr: string;
 };
@@ -131,18 +133,18 @@ const copy = {
     dailyMedian: "短租市场中位数",
     monthlyMedian: "月租市场中位数",
     dailyMedianHint: "当前短租查价区间内的每晚市场中位数",
-    monthlyMedianHint: "当前月租查价区间内的30晚等效市场中位数",
+    monthlyMedianHint: "所选起租日区间内的30晚等效市场中位数",
     formTitle: "开始一次新查价",
     formDesc: "输入目标房源条件后，平台会调用本地 Airbnb 查价引擎，并把结果直接可视化。",
     pricingMode: "定价模式",
     monthlyMode: "月租定价",
     dailyMode: "短租每日定价",
-    monthlyModeHint: "查可住满30晚的附近月租房，并输出建议日价和30晚月租。",
+    monthlyModeHint: "按起租日区间逐日查询可住满30晚的附近月租房，并输出平均日价和30晚月租。",
     dailyModeHint: "逐日查询附近一晚可订房源，并输出每天建议挂牌价。",
     startDate: "开始日期",
     endDate: "结束日期",
     monthlyStartDate: "最早起租日",
-    monthlyEndDate: "最晚退房日",
+    monthlyEndDate: "最晚起租日",
     minStayNights: "月租晚数",
     address: "房源地址",
     addressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
@@ -207,6 +209,11 @@ const copy = {
     recommendations: "系统建议",
     dailyPlan: "短租每日建议价",
     monthlyPlan: "月租建议价格",
+    pdfReport: "PDF 报告",
+    exportPdf: "导出 PDF",
+    pdfUnavailable: "PDF 未生成",
+    openHtml: "查看 HTML",
+    openJson: "查看 JSON",
     htmlReport: "HTML 报告",
     jsonData: "JSON 数据",
     date: "日期",
@@ -244,18 +251,18 @@ const copy = {
     dailyMedian: "Short-stay market median",
     monthlyMedian: "Monthly market median",
     dailyMedianHint: "Nightly market median for the selected short-stay window",
-    monthlyMedianHint: "30-night equivalent market median for the selected monthly window",
+    monthlyMedianHint: "30-night equivalent market median across the selected start-date window",
     formTitle: "Start a new lookup",
     formDesc: "Enter the target listing conditions and the platform will run the local Airbnb price lookup engine and visualize the result.",
     pricingMode: "Pricing mode",
     monthlyMode: "Monthly pricing",
     dailyMode: "Short-stay daily pricing",
-    monthlyModeHint: "Find nearby listings bookable for 30 nights and return a daily price plus 30-night monthly price.",
+    monthlyModeHint: "Test each start date for nearby listings bookable for 30 nights, then return average daily and 30-night monthly prices.",
     dailyModeHint: "Check one-night availability day by day and return the best listing price for each date.",
     startDate: "Start date",
     endDate: "End date",
     monthlyStartDate: "Earliest start date",
-    monthlyEndDate: "Latest checkout date",
+    monthlyEndDate: "Latest start date",
     minStayNights: "Monthly nights",
     address: "Address",
     addressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
@@ -320,6 +327,11 @@ const copy = {
     recommendations: "Recommendations",
     dailyPlan: "Short-stay daily recommendations",
     monthlyPlan: "Monthly price recommendations",
+    pdfReport: "PDF report",
+    exportPdf: "Export PDF",
+    pdfUnavailable: "PDF unavailable",
+    openHtml: "Open HTML",
+    openJson: "Open JSON",
     htmlReport: "HTML report",
     jsonData: "JSON data",
     date: "Date",
@@ -1028,28 +1040,40 @@ export function MarketDashboard() {
     const monthlyStayLengthNumber = Number(form.monthlyStayLength);
 
     if (!form.startDate || !form.endDate) {
-      setError(locale === "zh" ? "请选择开始日期和结束日期。" : "Please select both start and end dates.");
+      setError(
+        form.pricingMode === "monthly"
+          ? locale === "zh"
+            ? "请选择最早起租日和最晚起租日。"
+            : "Please select both earliest and latest start dates."
+          : locale === "zh"
+            ? "请选择开始日期和结束日期。"
+            : "Please select both start and end dates.",
+      );
+      setHasLookupStarted(false);
+      return;
+    }
+
+    const startMs = Date.parse(form.startDate);
+    const endMs = Date.parse(form.endDate);
+    const spanDays = Math.round((endMs - startMs) / (24 * 3600 * 1000));
+
+    if (!Number.isFinite(spanDays) || spanDays < 0) {
+      setError(
+        form.pricingMode === "monthly"
+          ? locale === "zh"
+            ? "最晚起租日必须晚于或等于最早起租日。"
+            : "Latest start date must be on or after earliest start date."
+          : locale === "zh"
+            ? "结束日期必须晚于或等于开始日期。"
+            : "End date must be on or after start date.",
+      );
       setHasLookupStarted(false);
       return;
     }
 
     if (form.pricingMode === "monthly") {
-      const startMs = Date.parse(form.startDate);
-      const endMs = Date.parse(form.endDate);
-      const spanNights = Math.round((endMs - startMs) / (24 * 3600 * 1000));
-
       if (!Number.isFinite(monthlyStayLengthNumber) || monthlyStayLengthNumber < 28) {
         setError(locale === "zh" ? "月租晚数必须至少为 28。" : "Monthly nights must be at least 28.");
-        setHasLookupStarted(false);
-        return;
-      }
-
-      if (!Number.isFinite(spanNights) || spanNights < monthlyStayLengthNumber) {
-        setError(
-          locale === "zh"
-            ? `月租模式的日期范围至少需要 ${monthlyStayLengthNumber} 晚。`
-            : `Monthly mode needs at least ${monthlyStayLengthNumber} nights between start and end date.`,
-        );
         setHasLookupStarted(false);
         return;
       }
@@ -1518,8 +1542,12 @@ export function MarketDashboard() {
                       {loading
                         ? progress && progress.totalDays > 0
                           ? locale === "zh"
-                            ? `正在处理 ${progress.completedDays} / ${progress.totalDays} 天${progress.currentDate ? ` · 当前 ${progress.currentDate}` : ""}`
-                            : `Processing ${progress.completedDays} / ${progress.totalDays} days${progress.currentDate ? ` · current ${progress.currentDate}` : ""}`
+                            ? form.pricingMode === "monthly"
+                              ? `正在处理 ${progress.completedDays} / ${progress.totalDays} 个起租日${progress.currentDate ? ` · 当前 ${progress.currentDate}` : ""}`
+                              : `正在处理 ${progress.completedDays} / ${progress.totalDays} 天${progress.currentDate ? ` · 当前 ${progress.currentDate}` : ""}`
+                            : form.pricingMode === "monthly"
+                              ? `Processing ${progress.completedDays} / ${progress.totalDays} start dates${progress.currentDate ? ` · current ${progress.currentDate}` : ""}`
+                              : `Processing ${progress.completedDays} / ${progress.totalDays} days${progress.currentDate ? ` · current ${progress.currentDate}` : ""}`
                           : t.progressRunning
                         : t.progressDone}
                     </div>
@@ -1682,36 +1710,44 @@ export function MarketDashboard() {
                     {result.report.input.address} · {translatePropertyType(result.report.input.propertyType?.display || t.noPropertyLimit, locale)} · {translateRoomType(result.report.input.roomType.display, locale)}
                   </p>
                 </div>
-                <div className="text-xs leading-5 text-[var(--muted)]">
-                  <div>
-                    {t.htmlReport}:{" "}
+                <div className="flex flex-col gap-2 text-xs text-[var(--muted)] lg:items-end">
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    {result.reportPdfUrl ? (
+                      <a
+                        href={result.reportPdfUrl}
+                        download
+                        className="inline-flex rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 font-semibold text-white shadow-sm transition hover:brightness-105"
+                      >
+                        {t.exportPdf}
+                      </a>
+                    ) : (
+                      <span className="inline-flex rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[var(--muted)]">
+                        {t.pdfUnavailable}
+                      </span>
+                    )}
                     {result.reportHtmlUrl ? (
                       <a
                         href={result.reportHtmlUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[var(--accent-deep)] underline"
+                        className="inline-flex rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)]"
                       >
-                        {result.reportHtmlUrl}
+                        {t.openHtml}
                       </a>
-                    ) : (
-                      result.savedHtmlPath
-                    )}
-                  </div>
-                  <div>
-                    {t.jsonData}:{" "}
+                    ) : null}
                     {result.reportJsonUrl ? (
                       <a
                         href={result.reportJsonUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[var(--accent-deep)] underline"
+                        className="inline-flex rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)]"
                       >
-                        {result.reportJsonUrl}
+                        {t.openJson}
                       </a>
-                    ) : (
-                      result.savedJsonPath
-                    )}
+                    ) : null}
+                  </div>
+                  <div className="max-w-xl truncate text-right leading-5">
+                    {t.pdfReport}: {result.reportPdfUrl || result.savedPdfPath || t.pdfUnavailable}
                   </div>
                 </div>
               </div>
