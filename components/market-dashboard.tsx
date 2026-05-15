@@ -1777,25 +1777,14 @@ export function MarketDashboard() {
     <main className="min-h-screen bg-[var(--page)] px-2 py-2 sm:px-3 lg:px-4">
       <div className="mx-auto max-w-7xl space-y-3">
         <section className="overflow-hidden rounded-xl border border-[var(--line)] bg-white/96 px-4 py-3 shadow-sm sm:px-5">
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)] xl:items-end">
-            <div className="max-w-3xl">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2 border-b border-[#f3e6e1] pb-2 lg:flex-row lg:items-center lg:justify-between">
               <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--accent-deep)]">
                 {t.browserKicker}
               </p>
-              <h1 className="mt-1 text-xl font-semibold leading-tight tracking-tight text-[var(--ink)] sm:text-2xl">
-                {t.title}
-              </h1>
-              <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--muted)]">{t.subtitle}</p>
-            </div>
-            <div className="space-y-2 xl:min-w-[340px]">
-              <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{t.languageLabel}</span>
-                  <span className="text-[11px] text-[var(--muted)]">
-                    {mounted && localePreference === "auto" ? `${t.auto}: ${systemLocale === "zh" ? t.chinese : t.english}` : null}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <span className="text-[11px] font-medium text-[var(--muted)]">{t.languageLabel}</span>
+                <div className="flex rounded-md bg-[#fff6f4] p-0.5">
                   {([
                     ["auto", t.auto],
                     ["zh", t.chinese],
@@ -1805,28 +1794,48 @@ export function MarketDashboard() {
                       key={value}
                       type="button"
                       onClick={() => updateLocalePreference(value)}
-                      className={`rounded-md px-2.5 py-1 text-xs transition ${
+                      className={`rounded px-2.5 py-1 text-xs transition ${
                         localePreference === value
                           ? "bg-[var(--accent)] text-white shadow-sm"
-                          : "bg-[#fff6f4] text-[#5e4b4b] hover:bg-[#ffe8e6]"
+                          : "text-[#5e4b4b] hover:bg-white"
                       }`}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
+                <span className="text-[11px] text-[var(--muted)]">
+                  {mounted && localePreference === "auto" ? `${t.auto}: ${systemLocale === "zh" ? t.chinese : t.english}` : null}
+                </span>
               </div>
-              <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,0.75fr)] xl:items-start">
+              <div className="min-h-[132px] content-center">
+                <h1 className="text-2xl font-semibold leading-tight tracking-tight text-[var(--ink)] sm:text-3xl">
+                  {t.title}
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">{t.subtitle}</p>
+                <div className="mt-3 inline-flex rounded-lg border border-[#ffd7dc] bg-[#fff7f7] px-3 py-1.5 text-xs font-semibold text-[var(--accent-deep)]">
+                  {t.authPricing}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-3 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{t.authTitle}</span>
-                  <span className="text-[11px] font-medium text-[var(--accent-deep)]">{t.authPricing}</span>
+                  {!authStatus?.user ? (
+                    <span className={`text-xs ${authStatus?.trialUsed ? "text-[var(--accent-deep)]" : "text-[var(--muted)]"}`}>
+                      {authStatus?.trialUsed ? t.authFreeTrialUsed : t.authFreeTrialAvailable}
+                    </span>
+                  ) : null}
                 </div>
 
                 {authStatus?.user ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="text-xs text-[var(--muted)]">
-                      <span className="font-semibold text-[var(--ink)]">{t.authLoggedInAs}</span>
-                      <span className="ml-1 break-all">{authStatus.user.email}</span>
+                  <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                    <div className="min-w-0 text-xs text-[var(--muted)]">
+                      <div className="font-semibold text-[var(--ink)]">{t.authLoggedInAs}</div>
+                      <div className="truncate">{authStatus.user.email}</div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-md bg-[#fff6f4] px-2 py-1">
@@ -1842,7 +1851,7 @@ export function MarketDashboard() {
                       type="button"
                       disabled={authLoading}
                       onClick={onLogout}
-                      className="rounded-md border border-[var(--line)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)] disabled:cursor-wait disabled:opacity-70"
+                      className="rounded-md border border-[var(--line)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)] disabled:cursor-wait disabled:opacity-70 lg:col-span-2 lg:w-fit"
                     >
                       {t.authLogout}
                     </button>
@@ -1850,9 +1859,6 @@ export function MarketDashboard() {
                 ) : (
                   <form onSubmit={onAuthSubmit} className="mt-2 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className={`text-xs ${authStatus?.trialUsed ? "text-[var(--accent-deep)]" : "text-[var(--muted)]"}`}>
-                        {authStatus?.trialUsed ? t.authFreeTrialUsed : t.authFreeTrialAvailable}
-                      </span>
                       <div className="flex rounded-md bg-[#fff6f4] p-0.5">
                         {([
                           ["register", t.authRegister],
@@ -1875,6 +1881,12 @@ export function MarketDashboard() {
                           </button>
                         ))}
                       </div>
+                      <button
+                        disabled={authLoading}
+                        className="rounded-md bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
+                      >
+                        {authMode === "login" ? t.authSubmitLogin : t.authSubmitRegister}
+                      </button>
                     </div>
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       <input
@@ -1899,44 +1911,49 @@ export function MarketDashboard() {
                         {authError}
                       </div>
                     ) : null}
-                    <button
-                      disabled={authLoading}
-                      className="rounded-md bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
-                    >
-                      {authMode === "login" ? t.authSubmitLogin : t.authSubmitRegister}
-                    </button>
                   </form>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {activeMode === "monthly" ? (
-                  <>
-                    <SummaryCard
-                      label={t.suggestedDailyPrice}
-                      value={planSummary?.monthlySuggestedDaily ? formatMoney(planSummary.monthlySuggestedDaily.median) : t.generated}
-                      hint={t.monthlyModeHint}
-                    />
-                    <SummaryCard
-                      label={t.suggestedMonthlyPrice}
-                      value={planSummary?.monthlySuggested ? formatMoney(planSummary.monthlySuggested.median) : t.generated}
-                      hint={t.monthlyMedianHint}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <SummaryCard
-                      label={t.suggestedListPrice}
-                      value={planSummary?.dailySuggested ? formatMoney(planSummary.dailySuggested.avg) : t.generated}
-                      hint={t.dailyModeHint}
-                    />
-                    <SummaryCard
-                      label={t.dailyMedian}
-                      value={summary?.daily ? formatMoney(summary.daily.median) : t.generated}
-                      hint={t.dailyMedianHint}
-                    />
-                  </>
-                )}
-              </div>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {activeMode === "monthly" ? (
+                <>
+                  <SummaryCard
+                    label={t.suggestedDailyPrice}
+                    value={planSummary?.monthlySuggestedDaily ? formatMoney(planSummary.monthlySuggestedDaily.median) : t.generated}
+                    hint={t.monthlyModeHint}
+                  />
+                  <SummaryCard
+                    label={t.suggestedMonthlyPrice}
+                    value={planSummary?.monthlySuggested ? formatMoney(planSummary.monthlySuggested.median) : t.generated}
+                    hint={t.monthlyMedianHint}
+                  />
+                </>
+              ) : (
+                <>
+                  <SummaryCard
+                    label={t.suggestedListPrice}
+                    value={planSummary?.dailySuggested ? formatMoney(planSummary.dailySuggested.avg) : t.generated}
+                    hint={t.dailyModeHint}
+                  />
+                  <SummaryCard
+                    label={t.dailyMedian}
+                    value={summary?.daily ? formatMoney(summary.daily.median) : t.generated}
+                    hint={t.dailyMedianHint}
+                  />
+                </>
+              )}
+              <SummaryCard
+                label={t.authQueries}
+                value={authStatus?.user ? String(authStatus.user.queryCount) : authStatus?.trialUsed ? "1 / 1" : "0 / 1"}
+                hint={authStatus?.user ? t.authPricing : authStatus?.trialUsed ? t.authFreeTrialUsed : t.authFreeTrialAvailable}
+              />
+              <SummaryCard
+                label={t.authTotalDue}
+                value={authStatus?.user ? formatMoney(authStatus.user.totalCents / 100) : formatMoney(0)}
+                hint={t.authPricing}
+              />
             </div>
           </div>
         </section>
