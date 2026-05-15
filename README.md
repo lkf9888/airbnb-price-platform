@@ -43,6 +43,7 @@
 - `AIRBNB_STORAGE_STATE_BASE64`
 - `PHOTON_ENDPOINT`
 - `COLLECTLY_RENTAL_ENDPOINT`
+- `AUTH_SECRET`
 
 说明：
 
@@ -50,6 +51,14 @@
 - `AIRBNB_STORAGE_STATE_JSON`：部署环境可直接注入 Airbnb storage state JSON
 - `AIRBNB_STORAGE_STATE_BASE64`：如果不方便直接放 JSON，可用 base64 注入
 - `COLLECTLY_RENTAL_ENDPOINT`：可选，用于覆盖长租查价接口；默认使用 Collectly 当前公开 rental listings endpoint
+- `AUTH_SECRET`：用于签名 IP 试用记录和登录会话，请在部署环境配置一个足够长的随机字符串
+
+## 账号和收费
+
+- 未注册或未登录用户按 IP 地址只允许免费试用 1 次查询
+- 同一 IP 第二次查询会要求注册或登录
+- 注册/登录后，系统按 C$1 / 次查询记录查询次数和累计费用
+- 当前版本只记录费用，不自动扣款；正式收款建议后续接入 Stripe 和持久数据库
 
 如果部署环境没有本地登录态文件，接口会优先尝试从上面两个变量生成：
 

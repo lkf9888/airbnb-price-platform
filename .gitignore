@@ -7,5 +7,6 @@ node_modules
 npm-debug.log*
 server/automation/state/auth/*.json
 server/output/jobs/*
+server/output/auth-store.json
 server/output/reports/*
 !server/output/reports/.gitkeep

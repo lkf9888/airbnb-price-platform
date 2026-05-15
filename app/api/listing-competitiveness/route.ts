@@ -6,6 +6,8 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { enforceQueryAccess, recordBillableQuery } from "@/lib/auth";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -130,6 +132,12 @@ export async function POST(request: Request) {
     );
   }
 
+  const access = await enforceQueryAccess(request, locale);
+  if (!access.ok) {
+    return access.response;
+  }
+  const billing = await recordBillableQuery(access.user?.id, "listing-competitiveness");
+
   await ensureAirbnbStorageState();
 
   const jobId = randomUUID();
@@ -145,6 +153,7 @@ export async function POST(request: Request) {
     status: "running",
     startedAt,
     input: resolvedInput,
+    billing,
   });
 
   let stdoutBuf = "";
@@ -253,7 +262,7 @@ export async function POST(request: Request) {
     }
   });
 
-  return NextResponse.json({ jobId, status: "running", startedAt }, { status: 202 });
+  return NextResponse.json({ jobId, status: "running", startedAt, billing }, { status: 202 });
 }
 
 export async function GET(request: Request) {

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { enforceQueryAccess, recordBillableQuery } from "@/lib/auth";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -393,6 +395,11 @@ export async function POST(request: Request) {
   }
 
   const propertyType = mapPropertyType(input.propertyType);
+  const access = await enforceQueryAccess(request, locale);
+  if (!access.ok) {
+    return access.response;
+  }
+  const billing = await recordBillableQuery(access.user?.id, "long-term-rent");
 
   try {
     const rawListings = await collectListings(city, input.bedrooms, propertyType);
@@ -487,6 +494,7 @@ export async function POST(request: Request) {
       comparableListings: comparableListings.slice(0, 12),
       rawSampleCount: rawListings.length,
       supportedCities: SUPPORTED_CITIES,
+      billing,
     });
   } catch (error) {
     return NextResponse.json(

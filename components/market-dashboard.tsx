@@ -205,6 +205,21 @@ type AddressSuggestion = {
   formattedAddress?: string;
 };
 
+type AuthStatus = {
+  user: {
+    id: string;
+    email: string;
+    queryCount: number;
+    totalCents: number;
+  } | null;
+  trialUsed: boolean;
+  pricing: {
+    amountCents: number;
+    currency: string;
+    label: string;
+  };
+};
+
 const STORAGE_KEY = "airbnb-price-platform-locale";
 const LONG_TERM_CITIES = [
   "Vancouver",
@@ -228,6 +243,21 @@ const copy = {
     auto: "自动",
     chinese: "中文",
     english: "English",
+    authTitle: "账号",
+    authLogin: "登录",
+    authRegister: "注册",
+    authLogout: "退出",
+    authEmail: "邮箱",
+    authPassword: "密码",
+    authSubmitLogin: "登录",
+    authSubmitRegister: "注册",
+    authFreeTrialAvailable: "未登录可免费试用 1 次",
+    authFreeTrialUsed: "免费试用已用完，请注册或登录后继续查询",
+    authPricing: "收费标准：C$1 / 次查询",
+    authLoggedInAs: "已登录",
+    authQueries: "已查询",
+    authTotalDue: "累计费用",
+    authRequired: "请注册或登录后继续查询。",
     dailyMedian: "短租市场中位数",
     monthlyMedian: "月租市场中位数",
     dailyMedianHint: "当前短租查价区间内的每晚市场中位数",
@@ -392,6 +422,21 @@ const copy = {
     auto: "Auto",
     chinese: "中文",
     english: "English",
+    authTitle: "Account",
+    authLogin: "Log in",
+    authRegister: "Register",
+    authLogout: "Log out",
+    authEmail: "Email",
+    authPassword: "Password",
+    authSubmitLogin: "Log in",
+    authSubmitRegister: "Register",
+    authFreeTrialAvailable: "One free trial is available without logging in",
+    authFreeTrialUsed: "Free trial used. Register or log in to continue",
+    authPricing: "Pricing: C$1 / query",
+    authLoggedInAs: "Logged in",
+    authQueries: "Queries",
+    authTotalDue: "Total due",
+    authRequired: "Register or log in to continue.",
     dailyMedian: "Short-stay market median",
     monthlyMedian: "Monthly market median",
     dailyMedianHint: "Nightly market median for the selected short-stay window",
@@ -1112,6 +1157,11 @@ export function MarketDashboard() {
     bedrooms: "2",
     bathrooms: "2",
   });
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "register">("register");
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [listingCheckLoading, setListingCheckLoading] = useState(false);
   const [longTermLoading, setLongTermLoading] = useState(false);
@@ -1179,6 +1229,7 @@ export function MarketDashboard() {
     setListingCheckForm((current) => (
       current.startDate ? current : { ...current, startDate: defaultListingCheckStartDate() }
     ));
+    void loadAuthStatus();
   }, []);
 
   const locale: Locale = localePreference === "auto" ? systemLocale : localePreference;
@@ -1394,11 +1445,15 @@ export function MarketDashboard() {
       const payload = await safeJson(response);
 
       if (!response.ok || !payload.jobId) {
+        if (payload.authRequired) {
+          handleAuthRequired(payload.error || t.authRequired);
+        }
         throw new Error(
           payload.error || `${response.status} ${response.statusText || ""}`.trim() || t.errorPrefix,
         );
       }
 
+      void loadAuthStatus();
       pollJob(String(payload.jobId));
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : t.errorPrefix);
@@ -1418,6 +1473,74 @@ export function MarketDashboard() {
             ? `服务器返回了非 JSON 响应 (${response.status})：${snippet || "空"}`
             : `Non-JSON response from server (${response.status}): ${snippet || "empty"}`,
       };
+    }
+  }
+
+  async function loadAuthStatus() {
+    try {
+      const response = await fetch("/api/auth/status", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (response.ok) {
+        setAuthStatus(await response.json() as AuthStatus);
+      }
+    } catch {
+      // Authentication status is not critical for rendering the pricing tool.
+    }
+  }
+
+  function handleAuthRequired(message: string) {
+    setAuthMode("register");
+    setAuthError(message || t.authRequired);
+    void loadAuthStatus();
+  }
+
+  async function onAuthSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      const response = await fetch(`/api/auth/${authMode}`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "accept-language": locale,
+        },
+        body: JSON.stringify({
+          ...authForm,
+          locale: toRequestLocale(locale),
+        }),
+      });
+      const payload = await safeJson(response);
+      if (!response.ok) {
+        throw new Error(payload.error || t.authRequired);
+      }
+
+      setAuthForm({ email: authForm.email, password: "" });
+      await loadAuthStatus();
+    } catch (submitError) {
+      setAuthError(submitError instanceof Error ? submitError.message : t.authRequired);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function onLogout() {
+    setAuthLoading(true);
+    setAuthError(null);
+
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+      setAuthForm({ email: "", password: "" });
+      await loadAuthStatus();
+    } finally {
+      setAuthLoading(false);
     }
   }
 
@@ -1527,11 +1650,15 @@ export function MarketDashboard() {
       const payload = await safeJson(response);
 
       if (!response.ok || !payload.jobId) {
+        if (payload.authRequired) {
+          handleAuthRequired(payload.error || t.authRequired);
+        }
         throw new Error(
           payload.error || `${response.status} ${response.statusText || ""}`.trim() || t.errorPrefix,
         );
       }
 
+      void loadAuthStatus();
       pollListingCheckJob(String(payload.jobId));
     } catch (submitError) {
       setListingCheckError(submitError instanceof Error ? submitError.message : t.errorPrefix);
@@ -1582,12 +1709,16 @@ export function MarketDashboard() {
       const payload = await safeJson(response);
 
       if (!response.ok) {
+        if (payload.authRequired) {
+          handleAuthRequired(payload.error || t.authRequired);
+        }
         throw new Error(
           payload.error || `${response.status} ${response.statusText || ""}`.trim() || t.errorPrefix,
         );
       }
 
       setLongTermResult(payload as unknown as LongTermRentReport);
+      void loadAuthStatus();
     } catch (submitError) {
       setLongTermError(submitError instanceof Error ? submitError.message : t.errorPrefix);
     } finally {
@@ -1684,6 +1815,98 @@ export function MarketDashboard() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{t.authTitle}</span>
+                  <span className="text-[11px] font-medium text-[var(--accent-deep)]">{t.authPricing}</span>
+                </div>
+
+                {authStatus?.user ? (
+                  <div className="mt-2 space-y-2">
+                    <div className="text-xs text-[var(--muted)]">
+                      <span className="font-semibold text-[var(--ink)]">{t.authLoggedInAs}</span>
+                      <span className="ml-1 break-all">{authStatus.user.email}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-md bg-[#fff6f4] px-2 py-1">
+                        <div className="text-[var(--muted)]">{t.authQueries}</div>
+                        <div className="font-semibold text-[var(--ink)]">{authStatus.user.queryCount}</div>
+                      </div>
+                      <div className="rounded-md bg-[#fff6f4] px-2 py-1">
+                        <div className="text-[var(--muted)]">{t.authTotalDue}</div>
+                        <div className="font-semibold text-[var(--ink)]">{formatMoney(authStatus.user.totalCents / 100)}</div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={authLoading}
+                      onClick={onLogout}
+                      className="rounded-md border border-[var(--line)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--accent-deep)] transition hover:border-[var(--accent)] disabled:cursor-wait disabled:opacity-70"
+                    >
+                      {t.authLogout}
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={onAuthSubmit} className="mt-2 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`text-xs ${authStatus?.trialUsed ? "text-[var(--accent-deep)]" : "text-[var(--muted)]"}`}>
+                        {authStatus?.trialUsed ? t.authFreeTrialUsed : t.authFreeTrialAvailable}
+                      </span>
+                      <div className="flex rounded-md bg-[#fff6f4] p-0.5">
+                        {([
+                          ["register", t.authRegister],
+                          ["login", t.authLogin],
+                        ] as const).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setAuthMode(value);
+                              setAuthError(null);
+                            }}
+                            className={`rounded px-2 py-0.5 text-xs transition ${
+                              authMode === value
+                                ? "bg-[var(--accent)] text-white shadow-sm"
+                                : "text-[#5e4b4b]"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        className="w-full rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-xs"
+                        placeholder={t.authEmail}
+                        value={authForm.email}
+                        onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))}
+                      />
+                      <input
+                        type="password"
+                        autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                        className="w-full rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-xs"
+                        placeholder={t.authPassword}
+                        value={authForm.password}
+                        onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
+                      />
+                    </div>
+                    {authError ? (
+                      <div className="rounded-md border border-rose-200 bg-[var(--accent-soft)] px-2 py-1 text-xs text-rose-700">
+                        {authError}
+                      </div>
+                    ) : null}
+                    <button
+                      disabled={authLoading}
+                      className="rounded-md bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
+                    >
+                      {authMode === "login" ? t.authSubmitLogin : t.authSubmitRegister}
+                    </button>
+                  </form>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {activeMode === "monthly" ? (
