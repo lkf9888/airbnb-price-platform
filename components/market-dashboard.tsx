@@ -156,6 +156,45 @@ type ListingCheckApiResponse = {
   stderr?: string;
 };
 
+type LongTermRentReport = {
+  generatedAt: string;
+  source: "collectly";
+  input: {
+    address: string;
+    city: string;
+    propertyType: string;
+    roomType: string;
+    bedrooms: number;
+    bathrooms: number | null;
+  };
+  priceStats: {
+    count: number;
+    min: number;
+    max: number;
+    avg: number;
+    p25: number | null;
+    median: number | null;
+    p75: number | null;
+  } | null;
+  suggestedRent: number | null;
+  recommendation: string;
+  rawSampleCount: number;
+  comparableListings: Array<{
+    id: string;
+    title: string;
+    location: string;
+    href: string;
+    source: string;
+    price: number;
+    bedrooms: number | null;
+    bathrooms: number | null;
+    propertyType: string | null;
+    imageUrl: string | null;
+    score: number;
+    matchReasons: string[];
+  }>;
+};
+
 type AddressSuggestion = {
   placeId: string;
   text: string;
@@ -167,6 +206,18 @@ type AddressSuggestion = {
 };
 
 const STORAGE_KEY = "airbnb-price-platform-locale";
+const LONG_TERM_CITIES = [
+  "Vancouver",
+  "Burnaby",
+  "Richmond",
+  "Coquitlam",
+  "White Rock",
+  "New Westminster",
+  "Langley",
+  "Delta",
+  "Maple Ridge",
+  "Surrey",
+];
 
 const copy = {
   zh: {
@@ -313,6 +364,25 @@ const copy = {
     listingCheckJson: "查看 JSON",
     listingCheckNoComparables: "没有抓到可用的同类样本。可换一个起租日或稍后重试。",
     listingCheckRule: "为确保成为最低价，系统会建议低于当前最低同类竞品 C$5，并向下取整到 C$5。",
+    longTermTitle: "附近区域长租月租查价",
+    longTermDesc: "参考 Collectly 聚合的 Craigslist、Kijiji、VanPeople 等长租房源，按相同城市和相似房型给出建议月租。",
+    longTermCity: "城市",
+    longTermAddress: "参考地址（可选）",
+    longTermAddressPlaceholder: "例如 8160 mcmyn way, richmond, bc",
+    longTermSubmit: "查询长租月租",
+    longTermLoading: "正在查询长租市场...",
+    longTermResultTitle: "长租建议租金",
+    longTermSuggestedRent: "建议月租",
+    longTermMedian: "市场中位数",
+    longTermLow: "市场最低",
+    longTermHigh: "市场最高",
+    longTermSampleCount: "可用样本",
+    longTermRawSampleCount: "原始样本",
+    longTermComparables: "相似长租房源",
+    longTermNoComparables: "没有找到足够可用的长租价格样本。可放宽物业类型或卧室/卫生间条件后再查一次。",
+    longTermOpen: "打开房源",
+    longTermSource: "来源",
+    longTermBasedOn: "数据来自 Collectly 聚合房源，建议发布前人工复核最新状态。",
   },
   en: {
     browserKicker: "Airbnb Pricing Platform",
@@ -458,12 +528,43 @@ const copy = {
     listingCheckJson: "View JSON",
     listingCheckNoComparables: "No usable comparable samples were found. Try another start date or run it again later.",
     listingCheckRule: "To become the lowest listing, the system recommends C$5 below the current lowest comparable, rounded down to the nearest C$5.",
+    longTermTitle: "Nearby Long-Term Monthly Rent Lookup",
+    longTermDesc: "Uses Collectly's aggregated Craigslist, Kijiji, and VanPeople rental listings to recommend monthly rent from similar homes in the same city.",
+    longTermCity: "City",
+    longTermAddress: "Reference address (optional)",
+    longTermAddressPlaceholder: "For example: 8160 mcmyn way, richmond, bc",
+    longTermSubmit: "Lookup long-term rent",
+    longTermLoading: "Looking up long-term rental market...",
+    longTermResultTitle: "Long-term rent recommendation",
+    longTermSuggestedRent: "Suggested monthly rent",
+    longTermMedian: "Market median",
+    longTermLow: "Market low",
+    longTermHigh: "Market high",
+    longTermSampleCount: "Usable samples",
+    longTermRawSampleCount: "Raw samples",
+    longTermComparables: "Comparable long-term listings",
+    longTermNoComparables: "Not enough usable long-term rental samples were found. Loosen property type or bedroom/bathroom filters and try again.",
+    longTermOpen: "Open listing",
+    longTermSource: "Source",
+    longTermBasedOn: "Data comes from Collectly aggregated listings. Review current listing status before publishing.",
   },
 } as const;
 
 function translatePropertyType(value: string | null | undefined, locale: Locale) {
-  if (!value || locale === "zh") {
-    return value || "";
+  if (!value) {
+    return "";
+  }
+
+  if (locale === "zh") {
+    const mapping: Record<string, string> = {
+      Apartment: "公寓",
+      House: "独立屋",
+      Townhouse: "联排",
+      Basement: "套房 / 地下室",
+      Suite: "套房",
+    };
+
+    return mapping[value] || value;
   }
 
   const mapping: Record<string, string> = {
@@ -471,6 +572,7 @@ function translatePropertyType(value: string | null | undefined, locale: Locale)
     联排: "Townhouse",
     独立屋: "House",
     套房: "Suite",
+    "套房 / 地下室": "Basement",
   };
 
   return mapping[value] || value;
@@ -1002,12 +1104,22 @@ export function MarketDashboard() {
     startDate: "",
     stayNights: "30",
   }));
+  const [longTermForm, setLongTermForm] = useState({
+    city: "Richmond",
+    address: "",
+    propertyType: "公寓",
+    roomType: "整套房源",
+    bedrooms: "2",
+    bathrooms: "2",
+  });
   const [loading, setLoading] = useState(false);
   const [listingCheckLoading, setListingCheckLoading] = useState(false);
+  const [longTermLoading, setLongTermLoading] = useState(false);
   const [hasLookupStarted, setHasLookupStarted] = useState(false);
   const [hasListingCheckStarted, setHasListingCheckStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listingCheckError, setListingCheckError] = useState<string | null>(null);
+  const [longTermError, setLongTermError] = useState<string | null>(null);
   const [diagnosticUrls, setDiagnosticUrls] = useState<string[]>([]);
   const [progress, setProgress] = useState<{
     totalDays: number;
@@ -1016,6 +1128,7 @@ export function MarketDashboard() {
   } | null>(null);
   const [result, setResult] = useState<ApiResponse | null>(null);
   const [listingCheckResult, setListingCheckResult] = useState<ListingCheckApiResponse | null>(null);
+  const [longTermResult, setLongTermResult] = useState<LongTermRentReport | null>(null);
   const [systemLocale, setSystemLocale] = useState<Locale>("zh");
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [addressLoading, setAddressLoading] = useState(false);
@@ -1423,6 +1536,62 @@ export function MarketDashboard() {
     } catch (submitError) {
       setListingCheckError(submitError instanceof Error ? submitError.message : t.errorPrefix);
       setListingCheckLoading(false);
+    }
+  }
+
+  async function onLongTermSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const bedroomsNumber = Number(longTermForm.bedrooms);
+    const bathroomsNumber = Number(longTermForm.bathrooms);
+
+    if (!longTermForm.city.trim()) {
+      setLongTermError(locale === "zh" ? "请选择城市。" : "Please select a city.");
+      return;
+    }
+
+    if (!Number.isFinite(bedroomsNumber) || bedroomsNumber < 0) {
+      setLongTermError(locale === "zh" ? "卧室数量必须是 0 或以上的数字。" : "Bedrooms must be a number of 0 or more.");
+      return;
+    }
+
+    if (!Number.isFinite(bathroomsNumber) || bathroomsNumber < 0) {
+      setLongTermError(locale === "zh" ? "卫生间数量必须是 0 或以上的数字。" : "Bathrooms must be a number of 0 or more.");
+      return;
+    }
+
+    setLongTermLoading(true);
+    setLongTermError(null);
+    setLongTermResult(null);
+
+    try {
+      const response = await fetch("/api/long-term-rent", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "accept-language": locale,
+        },
+        body: JSON.stringify({
+          ...longTermForm,
+          bedrooms: bedroomsNumber,
+          bathrooms: bathroomsNumber,
+          locale: toRequestLocale(locale),
+        }),
+      });
+
+      const payload = await safeJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error || `${response.status} ${response.statusText || ""}`.trim() || t.errorPrefix,
+        );
+      }
+
+      setLongTermResult(payload as unknown as LongTermRentReport);
+    } catch (submitError) {
+      setLongTermError(submitError instanceof Error ? submitError.message : t.errorPrefix);
+    } finally {
+      setLongTermLoading(false);
     }
   }
 
@@ -2038,6 +2207,197 @@ export function MarketDashboard() {
                 ) : (
                   <div className="mt-2 rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-3 py-4 text-sm text-[var(--muted)]">
                     {t.listingCheckNoComparables}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-sm sm:px-5">
+          <div className="mb-3 flex flex-col gap-1 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--ink)]">{t.longTermTitle}</h2>
+              <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{t.longTermDesc}</p>
+            </div>
+            <p className="text-xs text-[var(--muted)]">{t.longTermBasedOn}</p>
+          </div>
+
+          <form onSubmit={onLongTermSubmit} className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-6 xl:items-end">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.longTermCity}</span>
+              <select
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={longTermForm.city}
+                onChange={(event) => setLongTermForm((current) => ({ ...current, city: event.target.value }))}
+              >
+                {LONG_TERM_CITIES.map((city) => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 md:col-span-2 xl:col-span-2">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.longTermAddress}</span>
+              <input
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                placeholder={t.longTermAddressPlaceholder}
+                value={longTermForm.address}
+                onChange={(event) => setLongTermForm((current) => ({ ...current, address: event.target.value }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.propertyType}</span>
+              <select
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={longTermForm.propertyType}
+                onChange={(event) => setLongTermForm((current) => ({ ...current, propertyType: event.target.value }))}
+              >
+                <option value="">{t.anyPropertyType}</option>
+                <option value="公寓">{t.apartment}</option>
+                <option value="联排">{t.townhouse}</option>
+                <option value="独立屋">{t.house}</option>
+                <option value="套房">{t.suite}</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.roomType}</span>
+              <select
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={longTermForm.roomType}
+                onChange={(event) => setLongTermForm((current) => ({ ...current, roomType: event.target.value }))}
+              >
+                <option value="整套房源">{t.entireHome}</option>
+                <option value="独立房间">{t.privateRoom}</option>
+                <option value="合住房间">{t.sharedRoom}</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.bedrooms}</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={longTermForm.bedrooms}
+                onChange={(event) => setLongTermForm((current) => ({ ...current, bedrooms: event.target.value }))}
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--muted)]">{t.bathrooms}</span>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                className="w-full rounded-lg border border-[var(--line)] bg-[#fffdfc] px-3 py-2 text-sm"
+                value={longTermForm.bathrooms}
+                onChange={(event) => setLongTermForm((current) => ({ ...current, bathrooms: event.target.value }))}
+              />
+            </label>
+            <button
+              disabled={longTermLoading}
+              className="rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-wait disabled:opacity-70"
+            >
+              {longTermLoading ? t.longTermLoading : t.longTermSubmit}
+            </button>
+          </form>
+
+          {longTermError ? (
+            <div className="mt-2 rounded-lg border border-rose-200 bg-[var(--accent-soft)] px-3 py-2 text-sm text-rose-700">
+              {t.errorPrefix}: {longTermError}
+            </div>
+          ) : null}
+
+          {longTermResult ? (
+            <div className="mt-3 space-y-3">
+              <div className="rounded-lg border border-[#ffd7dc] bg-[#fff7f7] px-3 py-3">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--accent-deep)]">{t.longTermResultTitle}</p>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--ink)]">
+                      {longTermResult.suggestedRent ? formatMoney(longTermResult.suggestedRent) : t.generated}
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{longTermResult.recommendation}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 text-xs text-[var(--muted)] lg:justify-end">
+                    <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">{longTermResult.input.city}</span>
+                    {longTermResult.input.propertyType ? (
+                      <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                        {translatePropertyType(longTermResult.input.propertyType, locale)}
+                      </span>
+                    ) : null}
+                    <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                      {longTermResult.input.bedrooms} {t.similarBedrooms}
+                    </span>
+                    {longTermResult.input.bathrooms != null ? (
+                      <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                        {longTermResult.input.bathrooms} {t.similarBathrooms}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  <SummaryCard label={t.longTermSuggestedRent} value={formatMoney(longTermResult.suggestedRent)} hint={t.longTermBasedOn} />
+                  <SummaryCard label={t.longTermMedian} value={formatMoney(longTermResult.priceStats?.median)} hint={t.longTermSampleCount} />
+                  <SummaryCard label={t.longTermLow} value={formatMoney(longTermResult.priceStats?.min)} hint={t.longTermSampleCount} />
+                  <SummaryCard label={t.longTermHigh} value={formatMoney(longTermResult.priceStats?.max)} hint={t.longTermSampleCount} />
+                  <SummaryCard label={t.longTermSampleCount} value={String(longTermResult.priceStats?.count || 0)} hint={`${t.longTermRawSampleCount}: ${longTermResult.rawSampleCount}`} />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--ink)]">{t.longTermComparables}</h3>
+                {longTermResult.comparableListings.length ? (
+                  <div className="mt-2 grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+                    {longTermResult.comparableListings.slice(0, 9).map((listing) => (
+                      <article key={listing.id} className="rounded-lg border border-[var(--line)] bg-[#fffaf9] p-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h4 className="line-clamp-2 text-sm font-semibold leading-5 text-[var(--ink)]">{listing.title}</h4>
+                            <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-[var(--muted)]">
+                              <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">{listing.location}</span>
+                              <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">{listing.source}</span>
+                              {listing.propertyType ? (
+                                <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                                  {translatePropertyType(listing.propertyType, locale)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="shrink-0 rounded-md bg-[var(--accent-soft)] px-2.5 py-1 text-sm font-semibold text-[var(--accent-deep)]">
+                            {formatMoney(listing.price)}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-[var(--muted)]">
+                          {listing.bedrooms != null ? (
+                            <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                              {listing.bedrooms} {t.similarBedrooms}
+                            </span>
+                          ) : null}
+                          {listing.bathrooms != null ? (
+                            <span className="rounded-md border border-[var(--line)] bg-white px-2 py-0.5">
+                              {listing.bathrooms} {t.similarBathrooms}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-3">
+                          <a
+                            href={listing.href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex rounded-lg bg-[linear-gradient(135deg,var(--accent),var(--accent-deep))] px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-105"
+                          >
+                            {t.longTermOpen}
+                          </a>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 rounded-lg border border-dashed border-[var(--line)] bg-white/70 px-3 py-4 text-sm text-[var(--muted)]">
+                    {t.longTermNoComparables}
                   </div>
                 )}
               </div>
